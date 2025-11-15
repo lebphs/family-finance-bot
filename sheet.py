@@ -14,10 +14,13 @@ class Sheet:
         main_sheet = self.sheet.worksheet("Main")
         data = main_sheet.batch_get(["J11:K23"])
         result = []
+        sum = 0
         for i in range(len(data[0])):
             if data[0][i] == []:
                 continue
             result.append(tuple((data[0][i][0], data[0][i][1])))
+            sum += float(data[0][i][1])
+        result.append(tuple(("Итого", str(sum))))
         return result
 
     def get_categories(self) -> list:
