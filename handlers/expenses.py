@@ -29,7 +29,7 @@ async def cmd_start(message: Message, state: FSMContext):
     )
 
 async def process_amount(message: Message, state: FSMContext):
-    amount = float(message.text)
+    amount = to_float(message.text)
     await state.update_data(amount=amount)
 
     await state.set_state(ExpenseState.description)
@@ -37,6 +37,11 @@ async def process_amount(message: Message, state: FSMContext):
         "Добавь описание",
        reply_markup=no_description_keyboard(),
     )
+
+def to_float(value: str):
+    if ',' in value:
+        value = value.replace(',', '.')
+    return float(value)
 
 async def process_category(message: Message, state: FSMContext):
     category =  message.text

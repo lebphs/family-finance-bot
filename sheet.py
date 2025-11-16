@@ -20,7 +20,7 @@ class Sheet:
                 continue
             result.append(tuple((data[0][i][0], data[0][i][1])))
             sum += float(data[0][i][1])
-        result.append(tuple(("Итого", str(sum))))
+        result.append(tuple(("🧾 Итого", str(sum))))
         return result
 
     def get_categories(self) -> list:
