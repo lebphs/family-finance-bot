@@ -18,12 +18,19 @@ class AsyncSchedulerBot:
         self.scheduler_task = None
         self.subscribed_chats = set()
         self.notification_time = time(22, 00)
+        self.registered_users = set()
 
         from handlers.expenses import register_expenses
         from handlers.user import register_user
         self.dp.message.register(self.subscribe_chat, Command("subscribe"))
+        self.dp.message.register(self.register_user, Command("register"))
         register_user(self.dp)
         register_expenses(self.dp)
+
+    async def register_user(self, message):
+        self.registered_users.add(message.text);
+        await message.answer(f"✅ Мы тебя зарегистрировали.")
+
 
     async def subscribe_chat(self, message):
         time_str = message.text.split()[1]
@@ -48,8 +55,8 @@ class AsyncSchedulerBot:
 
         while True:
             now = datetime.now()
-            await self.send_daily_notification()
             if now.hour == self.notification_time.hour and now.minute == self.notification_time.minute:
+                logging.debug(f"Now {now} and notification time {self.notification_time}")
                 await self.send_daily_notification()
             await asyncio.sleep(60)
     
