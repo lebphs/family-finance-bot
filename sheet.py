@@ -42,6 +42,32 @@ class Sheet:
 
         return categories
 
+    def get_subcategories(self) -> dict[str, list[str]]:
+        pref_sheet = self.sheet.worksheet("Preferences")
+        data = pref_sheet.batch_get(["B4:C43"])
+
+        rows = data[0]
+        result: dict[str, list[str]] = {}
+        current_category: str | None = None
+
+        for row in rows:
+            if not row:
+                continue
+
+            cell_category = row[0] if len(row) > 0 else ""
+
+            if cell_category:
+                current_category = cell_category
+                result.setdefault(current_category, [])
+
+            if current_category is None:
+                continue
+
+            sub_list = result.setdefault(current_category, [])
+            sub_list.extend([c for c in row[1:] if c])
+
+        return result
+
 
     def add_transaction(self, data: list):
         transactions = self.sheet.worksheet("Transactions")

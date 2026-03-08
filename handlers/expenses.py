@@ -7,7 +7,7 @@ from gspread.exceptions import GSpreadException
 
 import sheet
 from keyboards import user
-from keyboards.user import categories_keyboard, no_description_keyboard
+from keyboards.user import categories_keyboard, no_description_keyboard, subcategories_keyboard
 from sheet import Sheet
 import datetime
 
@@ -32,10 +32,14 @@ async def process_amount(message: Message, state: FSMContext):
     amount = to_float(message.text)
     await state.update_data(amount=amount)
 
+    data = await state.get_data()
+    category = data.get("category")
+    keyboard = subcategories_keyboard(category) if category else no_description_keyboard()
+
     await state.set_state(ExpenseState.description)
     await message.answer(
-        "Добавь описание",
-       reply_markup=no_description_keyboard(),
+        "Добавь описание или выбери подкатегорию",
+        reply_markup=keyboard,
     )
 
 def to_float(value: str):

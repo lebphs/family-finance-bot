@@ -2,38 +2,72 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeybo
 
 from sheet import Sheet
 
+
 def categories_keyboard() -> ReplyKeyboardMarkup:
     sheet = Sheet()
-    categories = sheet.get_categories()
+    sub_map = sheet.get_subcategories()
+    categories = list(sub_map.keys())
     keyboards = []
     for i in range(0, len(categories), 2):
         if len(categories) - i == 1:
             keyboards.append([KeyboardButton(text=categories[-1])])
             break
-        
-        keyboards.append([
-            KeyboardButton(text=categories[i]), 
-            KeyboardButton(text=categories[i + 1])
-            ])
 
-    return ReplyKeyboardMarkup(keyboard=keyboards,
-        resize_keyboard=True, one_time_keyboard=True)
+        keyboards.append(
+            [
+                KeyboardButton(text=categories[i]),
+                KeyboardButton(text=categories[i + 1]),
+            ]
+        )
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboards, resize_keyboard=True, one_time_keyboard=True
+    )
+
+
+def subcategories_keyboard(category: str) -> ReplyKeyboardMarkup:
+    sheet = Sheet()
+    sub_map = sheet.get_subcategories()
+    subcategories = sub_map.get(category, [])
+
+    # Если подкатегорий нет, показываем только "Без описания"
+    if not subcategories:
+        return no_description_keyboard()
+
+    keyboards = [[KeyboardButton(text=name)] for name in subcategories]
+    keyboards.append([KeyboardButton(text="Без описания")])
+
+    return ReplyKeyboardMarkup(
+        keyboard=keyboards, resize_keyboard=True, one_time_keyboard=True
+    )
+
 
 def main_inlinekeyboard() -> ReplyKeyboardMarkup:
     keyboards = []
-    keyboards.append([
-        InlineKeyboardButton(text="Отменить операцию", callback_data="delete_last_transaction"),
-        InlineKeyboardButton(text="Просмотреть статистику", callback_data="show_statistics"),
-        InlineKeyboardButton(text="Просмотреть диаграмму", callback_data="show_excel_chart") 
-    ])
+    keyboards.append(
+        [
+            InlineKeyboardButton(
+                text="Отменить операцию", callback_data="delete_last_transaction"
+            ),
+            InlineKeyboardButton(
+                text="Просмотреть статистику", callback_data="show_statistics"
+            ),
+            InlineKeyboardButton(
+                text="Просмотреть диаграмму", callback_data="show_excel_chart"
+            ),
+        ]
+    )
 
-    return InlineKeyboardMarkup(inline_keyboard=keyboards,
-        resize_keyboard=True, one_time_keyboard=True)
+    return InlineKeyboardMarkup(
+        inline_keyboard=keyboards, resize_keyboard=True, one_time_keyboard=True
+    )
+
 
 def no_description_keyboard() -> ReplyKeyboardMarkup:
-    markup = ReplyKeyboardMarkup( keyboard=[
-            [KeyboardButton(text="Без описания")]
-        ],
-        resize_keyboard=True, one_time_keyboard=True)
+    markup = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Без описания")]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
 
     return markup
