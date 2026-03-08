@@ -23,7 +23,8 @@ def main_inlinekeyboard() -> ReplyKeyboardMarkup:
     keyboards = []
     keyboards.append([
         InlineKeyboardButton(text="Отменить операцию", callback_data="delete_last_transaction"),
-        InlineKeyboardButton(text="Просмотреть статистику", callback_data="show_statistics") 
+        InlineKeyboardButton(text="Просмотреть статистику", callback_data="show_statistics"),
+        InlineKeyboardButton(text="Просмотреть диаграмму", callback_data="show_excel_chart") 
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboards,

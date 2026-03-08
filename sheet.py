@@ -1,6 +1,12 @@
 import os
 
 import gspread
+import matplotlib
+import matplotlib.pyplot as plt
+from aiogram.types import FSInputFile
+
+
+matplotlib.use("Agg")
 
 
 class Sheet:
@@ -41,14 +47,6 @@ class Sheet:
         transactions = self.sheet.worksheet("Transactions")
         transactions.insert_row(data, index=2, value_input_option="USER_ENTERED")
         return
-        """Вставляет новую строку с данными о транзакции в
-        список транзакций в Google Sheet.
-
-        Args:
-            data (list): данные для вставки в лист пользователя.
-        """
-
-        
         
         outcome_tran = [data[0], "", "Transfer", data[1], data[2]]
         income_tran = [data[0], "", "Transfer", data[3], data[4]]
@@ -63,3 +61,34 @@ class Sheet:
     def delete_last_transaction(self):
         transactions = self.sheet.worksheet("Transactions")
         transactions.delete_row(2)
+
+    def send_excel_chart_as_image(self):
+        """Строит диаграмму расходов по категориям и возвращает файл‑изображение."""
+        statistics = self.get_statistics_by_categories()
+
+        labels = []
+        values = []
+
+        for name, value in statistics:
+            if "🧾 Итого" in name:
+                continue
+            label = name.split(" ", 1)[1] if " " in name else name
+            labels.append(label)
+            values.append(float(value))
+
+        # Круговая диаграмма
+        plt.figure(figsize=(8, 8))
+        plt.pie(
+            values,
+            labels=labels,
+            autopct=lambda pct: f"{pct:.1f}%" if pct >= 3 else "",
+            startangle=90,
+        )
+        plt.axis("equal")
+        plt.tight_layout()
+
+        temp_path = "temp_chart.png"
+        plt.savefig(temp_path)
+        plt.close()
+
+        return FSInputFile(temp_path)

@@ -26,6 +26,12 @@ async def show_statistics(callback: types.CallbackQuery):
     await callback.message.answer(stats_message, parse_mode="MarkdownV2", reply_markup=categories_keyboard())
 
 
+async def send_excel_chart(callback: types.CallbackQuery):
+    sheet = Sheet()
+    image = sheet.send_excel_chart_as_image()
+    await callback.message.answer_photo(image)
+    await callback.answer()
+
 async def delete_last_transaction(message: Message):
     sheet = Sheet()
     sheet.delete_last_transaction()
@@ -33,4 +39,5 @@ async def delete_last_transaction(message: Message):
 
 def register_user(dp: Dispatcher):
     dp.callback_query.register(show_statistics, F.data == "show_statistics")
+    dp.callback_query.register(send_excel_chart, F.data == "show_excel_chart")
     dp.callback_query.register(delete_last_transaction, F.data == "delete_last_transaction")
