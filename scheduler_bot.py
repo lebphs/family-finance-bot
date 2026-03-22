@@ -1,10 +1,10 @@
 import asyncio
+import logging
 from datetime import datetime, time
+
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
-import logging
-
 logger = logging.getLogger(__name__)
 
 
@@ -19,6 +19,7 @@ class AsyncSchedulerBot:
         self.subscribed_chats = set()
         self.notification_time = time(22, 00)
         self.registered_users = set()
+        self._sheet_rotation_done_for: tuple[int, int] | None = None
 
         from handlers.expenses import register_expenses
         from handlers.user import register_user
@@ -50,6 +51,24 @@ class AsyncSchedulerBot:
                 logging.debug(f"Error sending notification in chat {chat_id}")
                 self.subscribed_chats.discard(chat_id)
     
+    async def run_monthly_transactions_sheet_rotation(self, now: datetime) -> None:
+        period = (now.year, now.month)
+        if self._sheet_rotation_done_for == period:
+            return
+        from sheet import Sheet
+
+        def _rotate() -> bool:
+            return Sheet().rotate_transactions_sheet_for_new_month()
+
+        try:
+            rotated = await asyncio.to_thread(_rotate)
+            self._sheet_rotation_done_for = period
+            if rotated:
+                logger.info("Лист Transactions переименован под прошлый месяц, создан новый Transactions.")
+        except Exception:
+            logger.exception("Ошибка ротации листа Transactions")
+            return
+
     async def scheduler_loop(self):
         logging.info("Scheduler is started..")
 
@@ -58,6 +77,10 @@ class AsyncSchedulerBot:
             if now.hour == self.notification_time.hour and now.minute == self.notification_time.minute:
                 logging.debug(f"Now {now} and notification time {self.notification_time}")
                 await self.send_daily_notification()
+            if now.day == 1:
+                await self.run_monthly_transactions_sheet_rotation(now)
+            else:
+                self._sheet_rotation_done_for = None
             await asyncio.sleep(60)
     
     async def run(self):

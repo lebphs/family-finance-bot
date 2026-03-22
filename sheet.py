@@ -1,4 +1,5 @@
 import os
+from datetime import date, timedelta
 
 import gspread
 import matplotlib
@@ -87,6 +88,38 @@ class Sheet:
     def delete_last_transaction(self):
         transactions = self.sheet.worksheet("Transactions")
         transactions.delete_row(2)
+
+    def rotate_transactions_sheet_for_new_month(self) -> bool:
+        """Переименовывает Transactions в Transactions ММ.ГГГГ (архив прошлого месяца) и создаёт пустой Transactions с тем же заголовком.
+
+        Вызывать 1-го числа. Повторный вызов в том же месяце не делает ничего (по имени архивного листа).
+        """
+        today = date.today()
+        if today.day != 1:
+            return False
+
+        first_this_month = today.replace(day=1)
+        last_prev_month = first_this_month - timedelta(days=1)
+        mm = last_prev_month.month
+        yyyy = last_prev_month.year
+        archive_title = f"Transactions {mm:02d}.{yyyy}"
+
+        titles = {ws.title for ws in self.sheet.worksheets()}
+        if archive_title in titles:
+            return False
+        if "Transactions" not in titles:
+            return False
+
+        current = self.sheet.worksheet("Transactions")
+        headers = current.row_values(1)
+        current.update_title(archive_title)
+
+        col_count = max(len(headers), 5) if headers else 5
+        new_ws = self.sheet.add_worksheet(title="Transactions", rows=1000, cols=col_count)
+        if headers:
+            new_ws.append_row(headers, value_input_option="USER_ENTERED")
+
+        return True
 
     def send_excel_chart_as_image(self):
         """Строит диаграмму расходов по категориям и возвращает файл‑изображение."""
