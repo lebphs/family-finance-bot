@@ -1,11 +1,11 @@
+import asyncio
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 
 from sheet import Sheet
 
 
-def categories_keyboard() -> ReplyKeyboardMarkup:
-    sheet = Sheet()
-    sub_map = sheet.get_subcategories()
+async def categories_keyboard() -> ReplyKeyboardMarkup:
+    sub_map = await asyncio.to_thread(lambda: Sheet().get_subcategories())
     categories = list(sub_map.keys())
     keyboards = []
     for i in range(0, len(categories), 2):
@@ -25,9 +25,8 @@ def categories_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def subcategories_keyboard(category: str) -> ReplyKeyboardMarkup:
-    sheet = Sheet()
-    sub_map = sheet.get_subcategories()
+async def subcategories_keyboard(category: str) -> ReplyKeyboardMarkup:
+    sub_map = await asyncio.to_thread(lambda: Sheet().get_subcategories())
     subcategories = sub_map.get(category, [])
 
     # Если подкатегорий нет, показываем только "Без описания"

@@ -1,153 +1,79 @@
-import os
-from datetime import date, timedelta
-
-import gspread
-import matplotlib
-import matplotlib.pyplot as plt
-from aiogram.types import FSInputFile
-
-
-matplotlib.use("Agg")
+"""Synchronous compatibility facade for bot worker threads; no import-time I/O."""
+from backend.sheets import (
+    GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository, SheetsGateway,
+)
+from backend.services import UserService
+from backend.models import CurrentUser
+from config import load_settings
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+from decimal import Decimal
 
 
 class Sheet:
+    def __init__(self, settings=None, *, gateway=None):
+        settings = settings or load_settings()
+        self.gateway = gateway or SheetsGateway(settings)
+        self.categories = GoogleSheetsCategoryRepository(settings, gateway=self.gateway)
+        self.transactions = GoogleSheetsTransactionRepository(settings, gateway=self.gateway)
 
-    def __init__(self) -> None:
+    def get_statistics_by_categories(self):
+        def read():
+            rows = self.gateway.worksheet("Main").get("J11:K23")
+            result = [(row[0], row[1]) for row in rows if len(row) >= 2 and row[0]]
+            total = sum(float(str(value).replace(",", ".")) for _, value in result)
+            return result + [("🧾 Итого", str(total))]
+        return self.gateway.run(read, read_only=True)
 
-        account = gspread.service_account( filename=os.path.join(os.path.dirname(__file__), "google-credentials.json"))
-        self.sheet = account.open_by_key(os.getenv("GOOGLE_SHEET_ID"))
+    def get_categories(self):
+        return list(self.get_subcategories())
 
-    def get_statistics_by_categories(self) -> dict:
-        main_sheet = self.sheet.worksheet("Main")
-        data = main_sheet.batch_get(["J11:K23"])
-        result = []
-        sum = 0
-        for i in range(len(data[0])):
-            if data[0][i] == []:
-                continue
-            result.append(tuple((data[0][i][0], data[0][i][1])))
-            sum += float(data[0][i][1])
-        result.append(tuple(("🧾 Итого", str(sum))))
-        return result
+    def get_subcategories(self):
+        categories = self.gateway.run(self.categories._list_sync, read_only=True)
+        return {category.name: list(category.subcategories) for category in categories}
 
-    def get_categories(self) -> list:
-        pref_sheet = self.sheet.worksheet("Preferences")
-        data = pref_sheet.batch_get(["B4:B43"])
-
-        
-        categories = []
-        for i in range(len(data[0])):
-            if data[0][i] == []:
-                continue
-            categories.append(data[0][i][0])
-
-        return categories
-
-    def get_subcategories(self) -> dict[str, list[str]]:
-        pref_sheet = self.sheet.worksheet("Preferences")
-        data = pref_sheet.batch_get(["B4:C43"])
-
-        rows = data[0]
-        result: dict[str, list[str]] = {}
-        current_category: str | None = None
-
-        for row in rows:
-            if not row:
-                continue
-
-            cell_category = row[0] if len(row) > 0 else ""
-
-            if cell_category:
-                current_category = cell_category
-                result.setdefault(current_category, [])
-
-            if current_category is None:
-                continue
-
-            sub_list = result.setdefault(current_category, [])
-            sub_list.extend([c for c in row[1:] if c])
-
-        return result
-
-
-    def add_transaction(self, data: list):
-        transactions = self.sheet.worksheet("Transactions")
-        transactions.insert_row(data, index=2, value_input_option="USER_ENTERED")
-        return
-        
-        outcome_tran = [data[0], "", "Transfer", data[1], data[2]]
-        income_tran = [data[0], "", "Transfer", data[3], data[4]]
-
-        
-        transactions = self.sheet.worksheet("Transactions")
-        transactions.insert_rows(
-            [income_tran, outcome_tran], row=2, value_input_option="USER_ENTERED"
+    def add_transaction(self, data: list, *, author: CurrentUser):
+        return self.gateway.run(
+            self.transactions._create_sync, date.fromisoformat(data[0]),
+            data[1], data[2], Decimal(str(data[3])), author,
         )
-        return
 
-    def delete_last_transaction(self):
-        transactions = self.sheet.worksheet("Transactions")
-        transactions.delete_row(2)
+    def rotate_transactions_sheet_for_new_month(self, today=None):
+        return self.gateway.run(self.transactions._rotate_sync, today or datetime.now(ZoneInfo("Europe/Minsk")).date())
 
-    def rotate_transactions_sheet_for_new_month(self) -> bool:
-        """Переименовывает Transactions в Transactions ММ.ГГГГ (архив прошлого месяца) и создаёт пустой Transactions с тем же заголовком.
-
-        Вызывать 1-го числа. Повторный вызов в том же месяце не делает ничего (по имени архивного листа).
-        """
-        today = date.today()
-        if today.day != 1:
-            return False
-
-        first_this_month = today.replace(day=1)
-        last_prev_month = first_this_month - timedelta(days=1)
-        mm = last_prev_month.month
-        yyyy = last_prev_month.year
-        archive_title = f"Transactions {mm:02d}.{yyyy}"
-
-        titles = {ws.title for ws in self.sheet.worksheets()}
-        if archive_title in titles:
-            return False
-        if "Transactions" not in titles:
-            return False
-
-        current = self.sheet.worksheet("Transactions")
-        headers = current.row_values(1)
-        current.update_title(archive_title)
-
-        col_count = max(len(headers), 5) if headers else 5
-        new_ws = self.sheet.add_worksheet(title="Transactions", rows=1000, cols=col_count)
-        if headers:
-            new_ws.append_row(headers, value_input_option="USER_ENTERED")
-
-        return True
+    def delete_last_transaction(self, *, author: CurrentUser):
+        # Legacy bot action affects a shared row; limit it to an active admin.
+        UserService.require_admin(author)
+        def delete():
+            ws = self.gateway.worksheet("Transactions")
+            rows = ws.get_all_values(value_render_option="UNFORMATTED_VALUE")
+            if len(rows) < 2 or len(rows[1]) < 7 or not rows[1][6]:
+                return False
+            return self.transactions._delete_sync(str(rows[1][6]))
+        return self.gateway.run(delete)
 
     def send_excel_chart_as_image(self):
-        """Строит диаграмму расходов по категориям и возвращает файл‑изображение."""
+        from io import BytesIO
+        import matplotlib
+        matplotlib.use("Agg")
+        from matplotlib.figure import Figure
+        from aiogram.types import BufferedInputFile
         statistics = self.get_statistics_by_categories()
-
-        labels = []
-        values = []
-
+        labels, values = [], []
         for name, value in statistics:
             if "🧾 Итого" in name:
                 continue
-            label = name.split(" ", 1)[1] if " " in name else name
-            labels.append(label)
-            values.append(float(value))
-
-        # Круговая диаграмма
-        plt.figure(figsize=(8, 8))
-        plt.pie(
-            values,
-            labels=labels,
-            autopct=lambda pct: f"{pct:.1f}%" if pct >= 3 else "",
-            startangle=90,
-        )
-        plt.axis("equal")
-        plt.tight_layout()
-
-        temp_path = "temp_chart.png"
-        plt.savefig(temp_path)
-        plt.close()
-
-        return FSInputFile(temp_path)
+            labels.append(name.split(" ", 1)[-1])
+            values.append(float(str(value).replace(",", ".")))
+        figure = Figure(figsize=(8, 8))
+        axes = figure.subplots()
+        if any(values):
+            axes.pie(values, labels=labels,
+                     autopct=lambda pct: f"{pct:.1f}%" if pct >= 3 else "", startangle=90)
+        else:
+            axes.text(0.5, 0.5, "Нет расходов", ha="center")
+        axes.axis("equal")
+        figure.tight_layout()
+        output = BytesIO()
+        figure.savefig(output, format="png")
+        return BufferedInputFile(output.getvalue(), filename="chart.png")

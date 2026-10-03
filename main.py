@@ -1,15 +1,21 @@
-import asyncio
-import logging
-import os
-from dotenv import load_dotenv
-from scheduler_bot import AsyncSchedulerBot
+import uvicorn
 
-logging.basicConfig(level=logging.DEBUG)
+from backend.api import create_app
+from backend.logging_config import configure_logging
+from config import load_settings
 
-load_dotenv()
+
+def run() -> None:
+    settings = load_settings()
+    configure_logging()
+    app = create_app(settings)
+    uvicorn.run(
+        app,
+        host=settings.api_host,
+        port=settings.api_port,
+        log_config=None,
+    )
+
 
 if __name__ == "__main__":
-
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    bot = AsyncSchedulerBot(BOT_TOKEN)
-    asyncio.run(bot.run())
+    run()

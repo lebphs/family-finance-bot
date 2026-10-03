@@ -1,6 +1,8 @@
 import asyncio
 import logging
+from contextlib import suppress
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
@@ -58,22 +60,22 @@ class AsyncSchedulerBot:
         from sheet import Sheet
 
         def _rotate() -> bool:
-            return Sheet().rotate_transactions_sheet_for_new_month()
+            return Sheet().rotate_transactions_sheet_for_new_month(now.date())
 
         try:
             rotated = await asyncio.to_thread(_rotate)
             self._sheet_rotation_done_for = period
             if rotated:
-                logger.info("Лист Transactions переименован под прошлый месяц, создан новый Transactions.")
+                logger.info("Лист Transactions скопирован в архив прошлого месяца и очищен.")
         except Exception:
-            logger.exception("Ошибка ротации листа Transactions")
+            logger.error("Ошибка ротации листа Transactions; повторим позже")
             return
 
     async def scheduler_loop(self):
         logging.info("Scheduler is started..")
 
         while True:
-            now = datetime.now()
+            now = datetime.now(ZoneInfo("Europe/Minsk"))
             if now.hour == self.notification_time.hour and now.minute == self.notification_time.minute:
                 logging.debug(f"Now {now} and notification time {self.notification_time}")
                 await self.send_daily_notification()
@@ -92,3 +94,6 @@ class AsyncSchedulerBot:
         finally:
             if self.scheduler_task:
                 self.scheduler_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self.scheduler_task
+            await self.bot.session.close()
