@@ -15,8 +15,10 @@ import threading
 import time
 from uuid import uuid4
 
-from backend.errors import RepositoryError, RepositorySchemaError, RepositoryUnavailableError, UserAlreadyExistsError
+from backend.errors import RepositoryError, RepositorySchemaError, RepositoryUnavailableError, UserAlreadyExistsError, TransactionConflictError
 from backend.models import Category, CurrentUser, Transaction
+from backend.errors import StaleTransactionError
+from backend.transaction_version import transaction_version
 from config import Settings
 
 TRANSACTION_HEADERS = ("telegram_user_id", "display_name", "transaction_id", "created_at", "updated_at")
@@ -28,6 +30,7 @@ _LOCKS_GUARD = threading.Lock()
 class SheetsGateway:
     def __init__(self, settings: Settings, *, spreadsheet=None):
         self.sheet_id = settings.google_sheet_id
+        self.credentials_path = settings.google_credentials_path
         self._spreadsheet = spreadsheet
         with _LOCKS_GUARD:
             self.lock = _LOCKS.setdefault(self.sheet_id, threading.RLock())
@@ -37,7 +40,7 @@ class SheetsGateway:
         if self._spreadsheet is None:
             import gspread
             account = gspread.service_account(
-                filename=str(Path(__file__).resolve().parents[1] / "google-credentials.json")
+                filename=self.credentials_path
             )
             self._spreadsheet = account.open_by_key(self.sheet_id)
         return self._spreadsheet
@@ -55,7 +58,7 @@ class SheetsGateway:
             for attempt in range(attempts):
                 try:
                     return function(*args)
-                except (RepositoryError, UserAlreadyExistsError):
+                except (RepositoryError, UserAlreadyExistsError, TransactionConflictError, StaleTransactionError):
                     raise
                 except gspread.exceptions.APIError as error:
                     status = getattr(error.response, "status_code", None)
@@ -117,7 +120,9 @@ def expanded(row):
 
 
 def has_transaction(row):
-    return any(value != "" for value in row[:4])
+    # Historical sheets can contain dated category notes without an amount.
+    # They are not expenses and must not make the whole ledger unreadable.
+    return len(row) > 3 and row[3] != ""
 
 
 def parse_date(value):
@@ -183,14 +188,14 @@ class GoogleSheetsTransactionRepository(AsyncSheetsRepository):
         return await self._run(self._get_sync, transaction_id, read_only=True)
 
     async def create(self, *, date: date, description: str, category: str,
-                     amount: Decimal, author: CurrentUser) -> Transaction:
-        return await self._run(self._create_sync, date, description, category, amount, author)
+                     amount: Decimal, author: CurrentUser, transaction_id: str | None = None) -> Transaction:
+        return await self._run(self._create_sync, date, description, category, amount, author, transaction_id)
 
-    async def update(self, transaction_id: str, changes: dict[str, object]) -> Transaction | None:
-        return await self._run(self._update_sync, transaction_id, changes)
+    async def update(self, transaction_id: str, changes: dict[str, object], *, expected_version: str | None = None) -> Transaction | None:
+        return await self._run(self._update_sync, transaction_id, changes, expected_version)
 
-    async def delete(self, transaction_id: str) -> bool:
-        return await self._run(self._delete_sync, transaction_id)
+    async def delete(self, transaction_id: str, *, expected_version: str | None = None) -> bool:
+        return await self._run(self._delete_sync, transaction_id, expected_version)
 
     async def rotate(self, today: date) -> bool:
         return await self._run(self._rotate_sync, today)
@@ -222,18 +227,27 @@ class GoogleSheetsTransactionRepository(AsyncSheetsRepository):
         entry = self._find(transaction_id)
         return entry[2] if entry else None
 
-    def _create_sync(self, expense_date, description, category, amount, author):
+    def _create_sync(self, expense_date, description, category, amount, author, transaction_id=None):
         if not isinstance(expense_date, date) or not isinstance(author, CurrentUser):
             raise ValueError("Invalid transaction")
         amount = Decimal(str(amount))
         if (not amount.is_finite() or amount <= 0 or not math.isfinite(float(amount))
                 or not category.strip() or author.telegram_user_id <= 0):
             raise ValueError("Invalid transaction")
+        # The gateway lock covers lookup and insert. The permanent ID survives
+        # restart, archival rotation and a lost response after a successful write.
+        if transaction_id:
+            existing = self._get_sync(transaction_id)
+            if existing:
+                if (existing.date, existing.description, existing.category, existing.amount, existing.author_id) != (
+                        expense_date, description, category, amount, author.telegram_user_id):
+                    raise TransactionConflictError()
+                return existing
         ws = self.gateway.worksheet("Transactions")
         verify_transaction_headers(ws)
         now = datetime.now(timezone.utc)
         transaction = Transaction(expense_date, description, category, amount,
-                                  author.telegram_user_id, author.display_name, str(uuid4()), now, now)
+                                  author.telegram_user_id, author.display_name, transaction_id or str(uuid4()), now, now)
         values = [cell(value) for value in transaction_row(transaction)]
         values[0]["userEnteredFormat"] = {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}}
         # Atomic insert + typed cells: descriptions starting with '=' stay plain text.
@@ -247,7 +261,7 @@ class GoogleSheetsTransactionRepository(AsyncSheetsRepository):
         ]})
         return transaction
 
-    def _update_sync(self, transaction_id, changes):
+    def _update_sync(self, transaction_id, changes, expected_version=None):
         from dataclasses import replace
         if not changes or set(changes) - {"date", "description", "category", "amount"}:
             raise ValueError("Invalid transaction fields")
@@ -255,6 +269,8 @@ class GoogleSheetsTransactionRepository(AsyncSheetsRepository):
         if entry is None:
             return None
         ws, row, transaction = entry
+        if expected_version is not None and transaction_version(transaction) != expected_version:
+            raise StaleTransactionError()
         verify_transaction_headers(ws)
         if "amount" in changes:
             changes = {**changes, "amount": Decimal(str(changes["amount"]))}
@@ -276,11 +292,14 @@ class GoogleSheetsTransactionRepository(AsyncSheetsRepository):
         ws.batch_update(updates, value_input_option="RAW")
         return updated
 
-    def _delete_sync(self, transaction_id):
+    def _delete_sync(self, transaction_id, expected_version=None):
         entry = self._find(transaction_id)
         if entry is None:
             return False
-        ws, row, _ = entry
+        ws, row, transaction = entry
+        if expected_version is not None and transaction_version(transaction) != expected_version:
+            raise StaleTransactionError()
+        verify_transaction_headers(ws)
         ws.delete_rows(row)
         return True
 

@@ -27,3 +27,11 @@ class RepositorySchemaError(RepositoryError):
 
 class UserAlreadyExistsError(ValueError):
     pass
+
+
+class TransactionConflictError(ValueError):
+    """An idempotency key was reused for different expense data."""
+
+
+class StaleTransactionError(Exception):
+    """The row changed since the client read it."""

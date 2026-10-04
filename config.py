@@ -23,6 +23,10 @@ class Settings:
     mini_app_url: str | None = None
     telegram_auth_max_age_seconds: int = 86400
     dev_auth_enabled: bool = False
+    google_credentials_path: str = "google-credentials.json"
+    state_dir: str = "data"
+    frontend_dir: str = "frontend/dist"
+    backup_enabled: bool = True
 
     @property
     def cors_origins(self) -> tuple[str, ...]:
@@ -44,7 +48,7 @@ class Settings:
         if environment not in {"development", "test", "production"}:
             raise ConfigurationError("APP_ENV должен быть development, test или production")
 
-        port_value = (values.get("API_PORT") or "8000").strip()
+        port_value = (values.get("PORT") or values.get("API_PORT") or "8000").strip()
         try:
             api_port = int(port_value)
         except ValueError as error:
@@ -57,7 +61,8 @@ class Settings:
             if mini_app_url is None:
                 raise ConfigurationError("В production необходимо задать MINI_APP_URL")
             parsed_url = urlsplit(mini_app_url)
-            if parsed_url.scheme != "https" or not parsed_url.netloc:
+            if (parsed_url.scheme != "https" or not parsed_url.hostname
+                    or parsed_url.username or parsed_url.password):
                 raise ConfigurationError("MINI_APP_URL в production должен быть HTTPS-адресом")
             mini_app_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
@@ -78,6 +83,10 @@ class Settings:
         if environment == "production" and dev_auth_enabled:
             raise ConfigurationError("Dev-авторизация запрещена в production")
 
+        backup_value = (values.get("BACKUP_ENABLED") or "true").strip().lower()
+        if backup_value not in {"true", "false"}:
+            raise ConfigurationError("BACKUP_ENABLED должен быть true или false")
+
         return cls(
             bot_token=normalized["BOT_TOKEN"],
             google_sheet_id=normalized["GOOGLE_SHEET_ID"],
@@ -87,6 +96,10 @@ class Settings:
             mini_app_url=mini_app_url,
             telegram_auth_max_age_seconds=telegram_auth_max_age_seconds,
             dev_auth_enabled=dev_auth_enabled,
+            google_credentials_path=(values.get("GOOGLE_APPLICATION_CREDENTIALS") or "google-credentials.json"),
+            state_dir=(values.get("STATE_DIR") or "data"),
+            frontend_dir=(values.get("FRONTEND_DIR") or "frontend/dist"),
+            backup_enabled=backup_value == "true",
         )
 
 

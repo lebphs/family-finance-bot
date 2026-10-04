@@ -43,9 +43,9 @@ class TransactionRepository(Protocol):
     async def list(self) -> list[Transaction]: ...
     async def get(self, transaction_id: str) -> Transaction | None: ...
     async def create(self, *, date: date, description: str, category: str,
-                     amount: Decimal, author: CurrentUser) -> Transaction: ...
-    async def update(self, transaction_id: str, changes: dict[str, object]) -> Transaction | None: ...
-    async def delete(self, transaction_id: str) -> bool: ...
+                     amount: Decimal, author: CurrentUser, transaction_id: str | None = None) -> Transaction: ...
+    async def update(self, transaction_id: str, changes: dict[str, object], *, expected_version: str | None = None) -> Transaction | None: ...
+    async def delete(self, transaction_id: str, *, expected_version: str | None = None) -> bool: ...
     async def rotate(self, today: date) -> bool: ...
 
 
@@ -77,7 +77,9 @@ class GoogleSheetsUserRepository(AsyncSheetsRepository):
         )
 
     def _list_sync(self) -> list[User]:
-        records = self._worksheet().get_all_records()
+        # Preserve comma-separated weekdays and identifiers as stored: gspread
+        # otherwise numericises "0,1,2,3,4,5,6" into 123456.
+        records = self._worksheet().get_all_records(numericise_ignore=["all"])
         users = [_user_from_record(record) for record in records]
         if len({user.telegram_user_id for user in users}) != len(users):
             raise RepositorySchemaError()
@@ -85,7 +87,7 @@ class GoogleSheetsUserRepository(AsyncSheetsRepository):
 
     def _create_sync(self, user: User) -> User:
         worksheet = self._worksheet()
-        records = worksheet.get_all_records()
+        records = worksheet.get_all_records(numericise_ignore=["all"])
         if any(_parse_int(record.get("telegram_user_id")) == user.telegram_user_id for record in records):
             raise UserAlreadyExistsError
         worksheet.append_row(_user_to_row(user), value_input_option="RAW")
@@ -93,7 +95,7 @@ class GoogleSheetsUserRepository(AsyncSheetsRepository):
 
     def _update_sync(self, telegram_user_id: int, changes: dict[str, object]) -> User | None:
         worksheet = self._worksheet()
-        records = worksheet.get_all_records()
+        records = worksheet.get_all_records(numericise_ignore=["all"])
         for index, record in enumerate(records, start=2):
             if _parse_int(record.get("telegram_user_id")) != telegram_user_id:
                 continue

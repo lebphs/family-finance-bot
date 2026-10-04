@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import logging
 from typing import Annotated, AsyncIterator, Callable
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, Request, Query, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.errors import ApiError, RepositoryError, RepositorySchemaError
 from backend.models import CurrentUser, User
-from backend.repositories import GoogleSheetsUserRepository, UserRepository
+from backend.repositories import GoogleSheetsUserRepository, UserRepository, CategoryRepository, TransactionRepository
 from backend.sheets import SheetsGateway, GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository
 from backend.runtime import BotRuntime
 from backend.schemas import (
@@ -20,8 +20,14 @@ from backend.schemas import (
     CurrentUserResponse,
     UpdateUserRequest,
     UserResponse,
+    CreateExpenseRequest,
+    TransactionResponse,
+    HomeResponse,
+    TransactionFilters, TransactionPage, TransactionParticipant, UpdateTransactionRequest,
 )
-from backend.services import ApplicationStatusService, UserService
+from backend.reminders import ReminderService, ReminderSettings, ReminderResponse
+from backend.services import ApplicationStatusService, UserService, ExpenseService
+from backend.statistics import StatisticsQuery, StatisticsResponse, StatisticsService
 from backend.telegram_auth import InitDataError, TelegramInitDataVerifier
 from config import Settings
 
@@ -35,6 +41,8 @@ def create_app(
     *,
     runtime_factory: RuntimeFactory = BotRuntime,
     user_repository: UserRepository | None = None,
+    category_repository: CategoryRepository | None = None,
+    transaction_repository: TransactionRepository | None = None,
 ) -> FastAPI:
     """Build the app without contacting Telegram or Google Sheets."""
 
@@ -71,9 +79,11 @@ def create_app(
 
     status_service = ApplicationStatusService()
     gateway = SheetsGateway(settings)
-    users = UserService(user_repository or GoogleSheetsUserRepository(settings, gateway=gateway))
-    categories = GoogleSheetsCategoryRepository(settings, gateway=gateway)
-    app.state.transaction_repository = GoogleSheetsTransactionRepository(settings, gateway=gateway)
+    user_store = user_repository or GoogleSheetsUserRepository(settings, gateway=gateway)
+    users = UserService(user_store)
+    categories = category_repository or GoogleSheetsCategoryRepository(settings, gateway=gateway)
+    app.state.transaction_repository = transaction_repository or GoogleSheetsTransactionRepository(settings, gateway=gateway)
+    expenses = ExpenseService(app.state.transaction_repository, categories)
     init_data_verifier = TelegramInitDataVerifier(
         settings.bot_token,
         max_age_seconds=settings.telegram_auth_max_age_seconds,
@@ -180,10 +190,68 @@ def create_app(
                 )
         return UserResponse.from_domain(await users.update_user(telegram_user_id, changes))
 
+    reminders = ReminderService(user_store)
+
+    @app.get("/api/reminders", response_model=ReminderResponse, tags=["reminders"])
+    async def get_reminders(user: Annotated[CurrentUser, Depends(current_user)]):
+        return await reminders.get(user)
+
+    @app.put("/api/reminders", response_model=ReminderResponse, tags=["reminders"])
+    async def put_reminders(request: ReminderSettings, user: Annotated[CurrentUser, Depends(current_user)]):
+        return await reminders.update(user, request)
+
     @app.get("/api/categories", tags=["categories"])
     async def list_categories(_user: Annotated[CurrentUser, Depends(current_user)]):
         return [{"name": item.name, "subcategories": list(item.subcategories)}
                 for item in await categories.list()]
+
+    @app.post("/api/transactions", response_model=TransactionResponse, status_code=201, tags=["transactions"])
+    async def create_expense(
+        request: CreateExpenseRequest,
+        user: Annotated[CurrentUser, Depends(current_user)],
+    ) -> TransactionResponse:
+        return await expenses.create(request, user)
+
+    @app.get("/api/transactions", response_model=TransactionPage, tags=["transactions"])
+    async def list_transactions(
+        _user: Annotated[CurrentUser, Depends(current_user)],
+        filters: Annotated[TransactionFilters, Query()],
+    ):
+        return await expenses.list(filters)
+
+    @app.get("/api/transactions/categories", response_model=list[str], tags=["transactions"])
+    async def transaction_categories(_user: Annotated[CurrentUser, Depends(current_user)]):
+        return sorted({item.category for item in await expenses.transactions.list()})
+
+    @app.get("/api/transactions/participants", response_model=list[TransactionParticipant], tags=["transactions"])
+    async def list_participants(_user: Annotated[CurrentUser, Depends(current_user)]):
+        return await expenses.participants()
+
+    @app.get("/api/transactions/{transaction_id}", response_model=TransactionResponse, tags=["transactions"])
+    async def get_transaction(transaction_id: str, _user: Annotated[CurrentUser, Depends(current_user)]):
+        return TransactionResponse.from_domain(await expenses.get(transaction_id))
+
+    @app.patch("/api/transactions/{transaction_id}", response_model=TransactionResponse, tags=["transactions"])
+    async def update_transaction(transaction_id: str, request: UpdateTransactionRequest,
+                                 user: Annotated[CurrentUser, Depends(current_user)]):
+        return await expenses.update(transaction_id, request, user)
+
+    @app.delete("/api/transactions/{transaction_id}", status_code=204, tags=["transactions"])
+    async def delete_transaction(transaction_id: str, user: Annotated[CurrentUser, Depends(current_user)],
+                                 version: Annotated[str, Query(pattern=r"^[a-f0-9]{64}$")]):
+        await expenses.delete(transaction_id, version, user)
+        return Response(status_code=204)
+
+    @app.get("/api/statistics", response_model=StatisticsResponse, tags=["statistics"])
+    async def get_statistics(
+        _user: Annotated[CurrentUser, Depends(current_user)],
+        query: Annotated[StatisticsQuery, Query()],
+    ) -> StatisticsResponse:
+        return await StatisticsService(app.state.transaction_repository).get(query)
+
+    @app.get("/api/home", response_model=HomeResponse, tags=["home"])
+    async def get_home(_user: Annotated[CurrentUser, Depends(current_user)]) -> HomeResponse:
+        return await expenses.home()
 
     @app.exception_handler(RepositoryError)
     async def handle_repository_error(_request: Request, error: RepositoryError):
@@ -218,6 +286,20 @@ def create_app(
     async def handle_unexpected_error(request: Request, _error: Exception) -> JSONResponse:
         logger.error("Необработанная ошибка API: %s %s", request.method, request.url.path)
         return _error_response(500, "internal_error", "Внутренняя ошибка сервера")
+
+    # Only built public assets are served; no repository root or state files.
+    from pathlib import Path
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+    frontend = Path(settings.frontend_dir).resolve()
+    if (frontend / "index.html").is_file():
+        assets = frontend / "assets"
+        if assets.is_dir():
+            app.mount("/assets", StaticFiles(directory=assets), name="assets")
+
+        @app.get("/", include_in_schema=False)
+        async def frontend_index():
+            return FileResponse(frontend / "index.html", headers={"Cache-Control": "no-store"})
 
     return app
 

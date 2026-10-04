@@ -54,7 +54,7 @@ class FakeWorksheet:
         self._read()
         return list(self.rows[index - 1]) if len(self.rows) >= index else []
 
-    def get_all_records(self):
+    def get_all_records(self, **kwargs):
         self._read()
         return [dict(zip(self.rows[0], row)) for row in self.rows[1:]]
 
@@ -174,6 +174,14 @@ class SheetsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(transactions[0].author_id)
         self.assertIsNone(transactions[0].transaction_id)
         self.assertEqual(transactions[0].author_name, "Автор не указан")
+
+    async def test_dated_legacy_note_without_amount_is_not_an_expense(self):
+        archived = self.book.worksheet("Transactions 08.2026")
+        archived.rows.append(["2026-08-02", "Заметка", "Еда", "", "", "", "legacy-note-id"])
+        self.assertEqual(len(await self.transactions.list()), 2)
+        self.assertIsNone(await self.transactions.get("legacy-note-id"))
+        report = await migrate(self.gateway)
+        self.assertEqual(report.missing_ids, 2)
 
     async def test_new_transaction_has_author_stable_id_and_timestamps(self):
         await self.prepare()
@@ -513,7 +521,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
             from scheduler_bot import AsyncSchedulerBot
             for module in (handlers.expenses, handlers.user, keyboards.user, sheet):
                 importlib.reload(module)
-            bot = AsyncSchedulerBot("123456:" + "x" * 35)
+            bot = AsyncSchedulerBot("123456:" + "x" * 35, settings=SETTINGS)
             await bot.bot.session.close()
             connect.assert_not_called()
 

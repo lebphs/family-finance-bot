@@ -25,7 +25,7 @@ class FakeWorksheet:
         self.appended = None
         self.updated = None
 
-    def get_all_records(self):
+    def get_all_records(self, **kwargs):
         return self.records
 
     def append_row(self, row, **_kwargs):

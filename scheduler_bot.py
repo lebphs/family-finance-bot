@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import suppress
-from datetime import datetime, time
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher
@@ -12,47 +12,92 @@ logger = logging.getLogger(__name__)
 
 class AsyncSchedulerBot:
 
-    def __init__(self, token):
+    def __init__(self, token, *, settings=None, users=None, ledger=None):
+        from config import load_settings
+        from backend.repositories import GoogleSheetsUserRepository
+        from backend.reminders import DeliveryLedger, ReminderDispatcher
+        from pathlib import Path
+
+        self.settings = settings or load_settings()
+        self.users = users or GoogleSheetsUserRepository(self.settings)
         self.bot = Bot(token=token)
-        storage = MemoryStorage()
-        self.dp = Dispatcher(storage=storage)
-        self.subscribed_users = set()
+        self.dp = Dispatcher(storage=MemoryStorage())
         self.scheduler_task = None
-        self.subscribed_chats = set()
-        self.notification_time = time(22, 00)
-        self.registered_users = set()
-        self._sheet_rotation_done_for: tuple[int, int] | None = None
+        self._sheet_rotation_done_for = None
+        self.reminders = ReminderDispatcher(self.users, ledger or DeliveryLedger(
+            str(Path(self.settings.state_dir) / "reminders.sqlite3")), self.bot)
 
         from handlers.expenses import register_expenses
         from handlers.user import register_user
+        self.dp.message.register(self.connect_chat, Command("start", "register"))
         self.dp.message.register(self.subscribe_chat, Command("subscribe"))
-        self.dp.message.register(self.register_user, Command("register"))
+        self.dp.message.register(self.unsubscribe_chat, Command("unsubscribe"))
         register_user(self.dp)
         register_expenses(self.dp)
+        self.dp.errors.register(self.handle_error)
 
-    async def register_user(self, message):
-        self.registered_users.add(message.text);
-        await message.answer(f"✅ Мы тебя зарегистрировали.")
+    async def handle_error(self, event):
+        logger.error("Ошибка обработки команды Telegram")
+        message = event.update.message
+        if message is not None:
+            try:
+                await message.answer("Не удалось выполнить команду. Попробуйте позже.")
+            except Exception:
+                logger.error("Не удалось отправить сообщение об ошибке")
+        return True
 
+    async def _authorized_private_user(self, message):
+        # Never attach financial reminders to a group or a client-supplied ID.
+        if message.from_user is None or message.chat.type != "private":
+            await message.answer("Откройте личный чат с ботом")
+            return None
+        user = await self.users.get(message.from_user.id)
+        if not user or not user.active:
+            await message.answer("Нет доступа")
+            return None
+        return user
+
+    async def connect_chat(self, message):
+        user = await self._authorized_private_user(message)
+        if user is None:
+            return
+        await self.users.update(user.telegram_user_id, {"chat_id": message.chat.id})
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+        markup = None
+        if self.settings.mini_app_url:
+            markup = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+                text="Открыть семейные расходы", web_app=WebAppInfo(url=self.settings.mini_app_url))]])
+        await message.answer("✅ Чат подключён. Настройте напоминания в Mini App.", reply_markup=markup)
 
     async def subscribe_chat(self, message):
-        time_str = message.text.split()[1]
-        hour,minute = map(int, time_str.split(":"))
-        self.notification_time = time(hour, minute)
+        from backend.reminders import ReminderSettings
+        parts = (message.text or "").split()
+        if len(parts) > 2:
+            await message.answer("Используйте /subscribe или /subscribe HH:MM")
+            return
+        try:
+            validated = ReminderSettings(reminder_time=parts[1] if len(parts) == 2 else "22:00")
+        except ValueError:
+            await message.answer("Укажите время в формате HH:MM, например /subscribe 22:00")
+            return
+        user = await self._authorized_private_user(message)
+        if user is None:
+            return
+        await self.users.update(user.telegram_user_id, {
+            "chat_id": message.chat.id, "reminder_enabled": True,
+            "reminder_time": validated.reminder_time,
+        })
+        await message.answer("✅ Персональные напоминания включены")
 
-        chat_id = message.chat.id
-        self.subscribed_chats.add(chat_id)
-        await message.answer(f"✅ Этот чат подписан на ежедневные напоминания в {time_str}!")
+    async def unsubscribe_chat(self, message):
+        user = await self._authorized_private_user(message)
+        if user is not None:
+            await self.users.update(user.telegram_user_id, {"reminder_enabled": False})
+            await message.answer("Напоминания отключены")
 
     async def send_daily_notification(self):
-        for chat_id in self.subscribed_chats.copy():
-            try:
-                await self.bot.send_message(chat_id=chat_id, text="⏰ Напоминаю! Заполни свои расходы за сегодня")
-                logging.debug(f"Notification was send in chat {chat_id}")
-            except Exception as e:
-                logging.debug(f"Error sending notification in chat {chat_id}")
-                self.subscribed_chats.discard(chat_id)
-    
+        await self.reminders.tick()
+
     async def run_monthly_transactions_sheet_rotation(self, now: datetime) -> None:
         period = (now.year, now.month)
         if self._sheet_rotation_done_for == period:
@@ -60,7 +105,7 @@ class AsyncSchedulerBot:
         from sheet import Sheet
 
         def _rotate() -> bool:
-            return Sheet().rotate_transactions_sheet_for_new_month(now.date())
+            return Sheet(self.settings).rotate_transactions_sheet_for_new_month(now.date())
 
         try:
             rotated = await asyncio.to_thread(_rotate)
@@ -72,25 +117,27 @@ class AsyncSchedulerBot:
             return
 
     async def scheduler_loop(self):
-        logging.info("Scheduler is started..")
-
+        from backend.backups import SheetsBackup
+        from backend.sheets import SheetsGateway
+        backup = SheetsBackup(SheetsGateway(self.settings), self.settings.state_dir)
         while True:
-            now = datetime.now(ZoneInfo("Europe/Minsk"))
-            if now.hour == self.notification_time.hour and now.minute == self.notification_time.minute:
-                logging.debug(f"Now {now} and notification time {self.notification_time}")
+            try:
                 await self.send_daily_notification()
-            if now.day == 1:
-                await self.run_monthly_transactions_sheet_rotation(now)
-            else:
-                self._sheet_rotation_done_for = None
-            await asyncio.sleep(60)
-    
+                now = datetime.now(ZoneInfo("Europe/Minsk"))
+                if now.day == 1:
+                    await self.run_monthly_transactions_sheet_rotation(now)
+                if self.settings.backup_enabled:
+                    await backup.run(now.date())
+            except Exception:
+                logger.error("Ошибка фоновой задачи; повторим на следующем цикле")
+            await asyncio.sleep(30)
+
     async def run(self):
         self.scheduler_task = asyncio.create_task(self.scheduler_loop())
         
         logging.info("Bot is started..")
         try:
-            await self.dp.start_polling(self.bot)
+            await self.dp.start_polling(self.bot, handle_signals=False)
         finally:
             if self.scheduler_task:
                 self.scheduler_task.cancel()

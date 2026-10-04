@@ -1,12 +1,29 @@
 
 services:
   bot:
+    image: family-finance-mini-app:local
     build:
       context: .
       dockerfile: Dockerfile
     env_file:
-      - .env
+      - path: .env
+      - path: .env.local-docker
+        required: false
+    environment:
+      APP_ENV: development
+      DEV_AUTH_ENABLED: "false"
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      PORT: "8000"
+      STATE_DIR: /app/data
+      FRONTEND_DIR: /app/frontend/dist
+      GOOGLE_APPLICATION_CREDENTIALS: /app/google-credentials.json
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./google-credentials.json:/app/google-credentials.json:ro
+      - finance-data:/app/data
+
+volumes:
+  finance-data:
