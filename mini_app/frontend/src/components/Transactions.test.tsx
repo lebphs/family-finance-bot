@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient, ApiError, CurrentUser, Transaction } from '../api';
 import { Transactions } from './Transactions';
 
@@ -23,10 +23,30 @@ const pullRefresh = () => { const target = screen.getByRole('region', { name: '�
 const open = async (name = /Кафе/) => fireEvent.click(await screen.findByRole('button', { name }));
 
 describe('управление транзакциями', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 10, 12));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    [2026, 9, 10, '2026-09-11', '2026-10-10'],
+    [2026, 0, 10, '2025-12-12', '2026-01-10'],
+    [2024, 2, 1, '2024-02-01', '2024-03-01'],
+  ])('по умолчанию запрашивает последние 30 дней (%i-%i-%i)', async (year, month, day, from, to) => {
+    vi.setSystemTime(new Date(year, month, day, 0, 30));
+    const { client } = setup();
+    await screen.findByText('Найдено операций: 2');
+    expect(client.transactions).toHaveBeenCalledExactlyOnceWith({ date_from: from, date_to: to }, expect.any(AbortSignal));
+    fireEvent.click(screen.getByRole('button', { name: /Фильтры/ }));
+    expect(screen.getByLabelText('Период с')).toHaveValue(from);
+    expect(screen.getByLabelText('Период по')).toHaveValue(to);
+  });
+
   it('передаёт фильтры, поддерживает старые категории и сбрасывает условия', async () => {
     const { client } = setup(); await screen.findByText('Найдено операций: 2');
     expect(screen.queryByRole('region', { name: 'Фильтры транзакций' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Фильтры' }));
+    fireEvent.click(screen.getByRole('button', { name: /Фильтры/ }));
     fireEvent.change(screen.getByLabelText('Период с'), { target: { value: '2026-08-01' } });
     fireEvent.change(screen.getByLabelText('Период по'), { target: { value: '2026-10-31' } });
     fireEvent.change(screen.getByLabelText('Категория фильтра'), { target: { value: 'Старая категория' } });
@@ -40,6 +60,9 @@ describe('управление транзакциями', () => {
     fireEvent.change(screen.getByLabelText('Участник'), { target: { value: 'unknown' } });
     fireEvent.click(screen.getByRole('button', { name: 'Применить фильтры' }));
     await waitFor(() => expect(client.transactions).toHaveBeenLastCalledWith({ unknown_author: 'true' }, expect.any(AbortSignal)));
+    expect(client.categories).toHaveBeenCalledTimes(1);
+    expect(client.participants).toHaveBeenCalledTimes(1);
+    expect(client.transactionCategories).toHaveBeenCalledTimes(1);
   });
 
   it('показывает пустой результат и позволяет повторить ошибку загрузки', async () => {
@@ -57,7 +80,7 @@ describe('управление транзакциями', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Загрузить ещё' }));
     expect(await screen.findByRole('button', { name: /Магазин/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Кафе/ })).toBeInTheDocument();
-    expect(client.transactions).toHaveBeenLastCalledWith({ offset: '1' });
+    expect(client.transactions).toHaveBeenLastCalledWith({ date_from: '2026-09-11', date_to: '2026-10-10', offset: '1' });
   });
 
   it('редактирует по ID и версии, защищает двойную отправку и обновляет сводку', async () => {

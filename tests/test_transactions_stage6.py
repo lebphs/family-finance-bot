@@ -1,7 +1,7 @@
 """Transaction management against fake Sheets and verified dev identities."""
 import asyncio
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import unittest
 from uuid import uuid4
 
@@ -74,11 +74,14 @@ class TransactionManagementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get('/api/transactions', params={'offset': 100})).json()['items'], [])
 
     async def test_author_options_are_public_and_include_unknown(self):
-        people = (await self.client.get('/api/transactions/participants')).json()
+        with patch('mini_app.backend.sheets.time', Mock(monotonic=Mock(return_value=100))):
+            people = (await self.client.get('/api/transactions/participants')).json()
         self.assertEqual({p['author_id'] for p in people}, {42, 43, None})
         self.assertTrue(all(set(p) == {'author_id', 'author_name'} for p in people))
         self.book.worksheet('Transactions 08.2026').rows[1][2] = 'Старая категория'
-        self.assertIn('Старая категория', (await self.client.get('/api/transactions/categories')).json())
+        # Direct spreadsheet edits become visible when the short snapshot expires.
+        with patch('mini_app.backend.sheets.time', Mock(monotonic=Mock(return_value=116))):
+            self.assertIn('Старая категория', (await self.client.get('/api/transactions/categories')).json())
 
     async def test_owner_can_edit_and_delete_archive_by_id_preserving_metadata(self):
         await self.repo.rotate(date(2026, 11, 1))

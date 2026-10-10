@@ -6,6 +6,7 @@ migration additionally requires stopping every other writer.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import math
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -25,6 +26,7 @@ TRANSACTION_HEADERS = ("telegram_user_id", "display_name", "transaction_id", "cr
 ARCHIVE_PATTERN = re.compile(r"Transactions (0[1-9]|1[0-2])\.([0-9]{4})")
 _LOCKS: dict[str, threading.RLock] = {}
 _LOCKS_GUARD = threading.Lock()
+_REVISIONS: dict[str, int] = {}
 
 
 class SheetsGateway:
@@ -32,8 +34,10 @@ class SheetsGateway:
         self.sheet_id = settings.google_sheet_id
         self.credentials_path = settings.google_credentials_path
         self._spreadsheet = spreadsheet
+        self._cache = {}
         with _LOCKS_GUARD:
             self.lock = _LOCKS.setdefault(self.sheet_id, threading.RLock())
+            _REVISIONS.setdefault(self.sheet_id, 0)
 
     @property
     def spreadsheet(self):
@@ -42,11 +46,30 @@ class SheetsGateway:
             account = gspread.service_account(
                 filename=self.credentials_path
             )
+            account.timeout = (3.05, 10)
             self._spreadsheet = account.open_by_key(self.sheet_id)
         return self._spreadsheet
 
     def worksheet(self, title):
-        return self.spreadsheet.worksheet(title)
+        # Reuse metadata, not cell values. Access checks still read Users live.
+        for worksheet in self.worksheets():
+            if worksheet.title == title:
+                return worksheet
+        import gspread
+        raise gspread.exceptions.WorksheetNotFound(title)
+
+    def worksheets(self):
+        return self.cached("worksheets", self.spreadsheet.worksheets, ttl=60, copy=False)
+
+    def cached(self, key, function, *, ttl, copy=True):
+        # Called inside run's shared lock: concurrent requests fill a key once.
+        revision = _REVISIONS[self.sheet_id]
+        entry = self._cache.get(key)
+        if entry is None or entry[0] != revision or entry[1] <= time.monotonic():
+            value = function()
+            entry = (revision, time.monotonic() + ttl, value)
+            self._cache[key] = entry
+        return deepcopy(entry[2]) if copy else entry[2]
 
     def run(self, function, *args, read_only=False):
         # Retry only reads: a timeout after a write may mean it already succeeded.
@@ -77,6 +100,12 @@ class SheetsGateway:
                     raise RepositoryError() from None
                 except (ValueError, TypeError, KeyError, InvalidOperation):
                     raise RepositorySchemaError() from None
+                finally:
+                    if not read_only:
+                        # Even a failed response may follow a successful write.
+                        # Invalidate other gateways used by the bot as well.
+                        _REVISIONS[self.sheet_id] += 1
+                        self._cache.clear()
 
 
 class AsyncSheetsRepository:
@@ -91,7 +120,10 @@ class AsyncSheetsRepository:
 
 class GoogleSheetsCategoryRepository(AsyncSheetsRepository):
     async def list(self) -> list[Category]:
-        return await self._run(self._list_sync, read_only=True)
+        return await self._run(self._cached_list_sync, read_only=True)
+
+    def _cached_list_sync(self):
+        return self.gateway.cached("categories", self._list_sync, ttl=60)
 
     def _list_sync(self):
         rows = self.gateway.worksheet("Preferences").get("B4:C43")
@@ -182,7 +214,10 @@ def transaction_row(transaction):
 
 class GoogleSheetsTransactionRepository(AsyncSheetsRepository):
     async def list(self) -> list[Transaction]:
-        return await self._run(self._list_sync, read_only=True)
+        return await self._run(self._cached_list_sync, read_only=True)
+
+    def _cached_list_sync(self):
+        return self.gateway.cached("transactions", self._list_sync, ttl=15)
 
     async def get(self, transaction_id: str) -> Transaction | None:
         return await self._run(self._get_sync, transaction_id, read_only=True)
@@ -203,8 +238,18 @@ class GoogleSheetsTransactionRepository(AsyncSheetsRepository):
     def _rows(self):
         ids = set()
         result = []
-        for ws in transaction_worksheets(self.gateway.spreadsheet):
-            for index, row in enumerate(ws.get_all_values(value_render_option="UNFORMATTED_VALUE")[1:], 2):
+        worksheets = [ws for ws in self.gateway.worksheets()
+                      if ws.title == "Transactions" or ARCHIVE_PATTERN.fullmatch(ws.title)]
+        if not worksheets:
+            raise RepositorySchemaError()
+        ranges = ["'{}'!A:I".format(ws.title.replace("'", "''")) for ws in worksheets]
+        values = self.gateway.spreadsheet.values_batch_get(
+            ranges, params={"valueRenderOption": "UNFORMATTED_VALUE"}
+        )["valueRanges"]
+        if len(values) != len(worksheets):
+            raise RepositorySchemaError()
+        for ws, value_range in zip(worksheets, values):
+            for index, row in enumerate(value_range.get("values", [])[1:], 2):
                 if not has_transaction(row):
                     continue
                 transaction = parse_transaction(row)

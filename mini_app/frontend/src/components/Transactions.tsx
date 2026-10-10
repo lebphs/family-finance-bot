@@ -8,6 +8,14 @@ import { StatusScreen } from './StatusScreen';
 const money = (value: string) => `${Number(value).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BYN`;
 const emptyFilters = { from: '', to: '', category: '', author: '', search: '' };
 
+function recentMonthFilters() {
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(start.getDate() - 29);
+  const date = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  return { ...emptyFilters, from: date(start), to: date(today) };
+}
+
 export function Transactions({ client, user, onDenied, onChanged }: {
   client: ApiClient; user: CurrentUser; onDenied: () => void; onChanged: () => void;
 }) {
@@ -16,8 +24,8 @@ export function Transactions({ client, user, onDenied, onChanged }: {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [optionsError, setOptionsError] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [draft, setDraft] = useState(emptyFilters);
-  const [filters, setFilters] = useState<TransactionFilters>({});
+  const [draft, setDraft] = useState(recentMonthFilters);
+  const [filters, setFilters] = useState<TransactionFilters>(() => ({ date_from: draft.from, date_to: draft.to }));
   const [page, setPage] = useState<TransactionPage | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -48,7 +56,7 @@ export function Transactions({ client, user, onDenied, onChanged }: {
   useEffect(() => {
     const controller = new AbortController();
     const version = ++generation.current;
-    setLoading(true); setError(''); setPage(null); setOptionsError('');
+    setLoading(true); setError(''); setPage(null);
     client.transactions(filters, controller.signal).then((result) => {
       if (!controller.signal.aborted && version === generation.current) setPage(result);
     }).catch((err) => {
@@ -56,6 +64,12 @@ export function Transactions({ client, user, onDenied, onChanged }: {
       if (err instanceof ApiError && err.accessDenied) deny.current();
       else setError('Не удалось загрузить транзакции.');
     }).finally(() => { if (!controller.signal.aborted && version === generation.current) setLoading(false); });
+    return () => controller.abort();
+  }, [client, filters, attempt]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setOptionsError('');
     Promise.all([client.categories(controller.signal), client.participants(controller.signal), client.transactionCategories(controller.signal)]).then(([cats, people, names]) => {
       if (!controller.signal.aborted) { setCategories(cats); setParticipants(people); setLedgerCategories(names); }
     }).catch((err) => {
@@ -64,7 +78,7 @@ export function Transactions({ client, user, onDenied, onChanged }: {
       else setOptionsError('Не удалось загрузить варианты фильтров. Повторите загрузку.');
     });
     return () => controller.abort();
-  }, [client, filters, attempt]);
+  }, [client, attempt]);
 
   function apply(event: FormEvent) {
     event.preventDefault();

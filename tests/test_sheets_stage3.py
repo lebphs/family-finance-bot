@@ -112,6 +112,11 @@ class FakeSpreadsheet:
     def worksheets(self):
         return list(self.sheets)
 
+    def values_batch_get(self, ranges, params=None):
+        return {"valueRanges": [{"range": area, "values": self.worksheet(
+            area.split("'!")[0][1:].replace("''", "'")
+        ).get_all_values(**(params or {}))} for area in ranges]}
+
     def worksheet(self, title):
         for ws in self.sheets:
             if ws.title == title:

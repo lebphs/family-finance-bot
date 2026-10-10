@@ -65,10 +65,14 @@ class GoogleSheetsUserRepository(AsyncSheetsRepository):
         return await self._run(self._update_sync, telegram_user_id, changes)
 
     def _worksheet(self):
-        worksheet = self.gateway.worksheet("Users")
-        if tuple(worksheet.row_values(1)) != USERS_HEADERS:
+        return self.gateway.worksheet("Users")
+
+    def _records(self, worksheet):
+        # One request for headers and rows; keep weekday strings intact.
+        rows = worksheet.get_all_values()
+        if not rows or tuple(rows[0]) != USERS_HEADERS:
             raise RepositorySchemaError()
-        return worksheet
+        return [dict(zip(USERS_HEADERS, row)) for row in rows[1:]]
 
     def _get_sync(self, telegram_user_id: int) -> User | None:
         return next(
@@ -79,7 +83,7 @@ class GoogleSheetsUserRepository(AsyncSheetsRepository):
     def _list_sync(self) -> list[User]:
         # Preserve comma-separated weekdays and identifiers as stored: gspread
         # otherwise numericises "0,1,2,3,4,5,6" into 123456.
-        records = self._worksheet().get_all_records(numericise_ignore=["all"])
+        records = self._records(self._worksheet())
         users = [_user_from_record(record) for record in records]
         if len({user.telegram_user_id for user in users}) != len(users):
             raise RepositorySchemaError()
@@ -87,7 +91,7 @@ class GoogleSheetsUserRepository(AsyncSheetsRepository):
 
     def _create_sync(self, user: User) -> User:
         worksheet = self._worksheet()
-        records = worksheet.get_all_records(numericise_ignore=["all"])
+        records = self._records(worksheet)
         if any(_parse_int(record.get("telegram_user_id")) == user.telegram_user_id for record in records):
             raise UserAlreadyExistsError
         worksheet.append_row(_user_to_row(user), value_input_option="RAW")
@@ -95,7 +99,7 @@ class GoogleSheetsUserRepository(AsyncSheetsRepository):
 
     def _update_sync(self, telegram_user_id: int, changes: dict[str, object]) -> User | None:
         worksheet = self._worksheet()
-        records = worksheet.get_all_records(numericise_ignore=["all"])
+        records = self._records(worksheet)
         for index, record in enumerate(records, start=2):
             if _parse_int(record.get("telegram_user_id")) != telegram_user_id:
                 continue

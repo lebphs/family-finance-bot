@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from mini_app.backend.models import User, UserRole
-from mini_app.backend.repositories import GoogleSheetsUserRepository
+from mini_app.backend.repositories import GoogleSheetsUserRepository, USERS_HEADERS
 from config import Settings
 
 
@@ -27,6 +27,10 @@ class FakeWorksheet:
 
     def get_all_records(self, **kwargs):
         return self.records
+
+    def get_all_values(self, **kwargs):
+        return [list(USERS_HEADERS)] + [[record.get(key, "") for key in USERS_HEADERS]
+                                      for record in self.records]
 
     def append_row(self, row, **_kwargs):
         self.appended = row

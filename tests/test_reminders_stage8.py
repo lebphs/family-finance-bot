@@ -241,7 +241,7 @@ class ProductionTests(unittest.IsolatedAsyncioTestCase):
 
         user = User(1, "Участник", UserRole.MEMBER, True)
         sheet = NumericisingWorksheet("Users", [list(USERS_HEADERS), _user_to_row(user)], 1)
-        book = SimpleNamespace(worksheet=lambda _: sheet)
+        book = SimpleNamespace(worksheet=lambda _: sheet, worksheets=lambda: [sheet])
         repo = GoogleSheetsUserRepository(SETTINGS, gateway=SheetsGateway(SETTINGS, spreadsheet=book))
         self.assertEqual(sheet.get_all_records()[0]["reminder_days"], 123456)
         self.assertEqual((await repo.get(1)).reminder_days, "0,1,2,3,4,5,6")
@@ -253,7 +253,7 @@ class ProductionTests(unittest.IsolatedAsyncioTestCase):
     async def test_users_sheet_settings_are_persistent_without_schema_change(self):
         from types import SimpleNamespace
         sheet = FakeWorksheet('Users',[list(USERS_HEADERS),_user_to_row(User(1,'Участник',UserRole.MEMBER,True))],1)
-        book = SimpleNamespace(worksheet=lambda _:sheet)
+        book = SimpleNamespace(worksheet=lambda _:sheet, worksheets=lambda: [sheet])
         repo = GoogleSheetsUserRepository(SETTINGS,gateway=SheetsGateway(SETTINGS,spreadsheet=book))
         await repo.update(1,dict(reminder_enabled=True,reminder_time='08:00',reminder_days='0,4',timezone='Europe/Berlin',chat_id=1))
         restarted = GoogleSheetsUserRepository(SETTINGS,gateway=SheetsGateway(SETTINGS,spreadsheet=book))
