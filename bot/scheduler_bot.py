@@ -1,8 +1,6 @@
 import asyncio
 import logging
 from contextlib import suppress
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
@@ -14,16 +12,15 @@ class AsyncSchedulerBot:
 
     def __init__(self, token, *, settings=None, users=None, ledger=None):
         from config import load_settings
-        from mini_app.backend.repositories import GoogleSheetsUserRepository
+        from mini_app.backend.database import SQLiteUserRepository
         from mini_app.backend.reminders import DeliveryLedger, ReminderDispatcher
         from pathlib import Path
 
         self.settings = settings or load_settings()
-        self.users = users or GoogleSheetsUserRepository(self.settings)
+        self.users = users or SQLiteUserRepository(self.settings)
         self.bot = Bot(token=token)
         self.dp = Dispatcher(storage=MemoryStorage())
         self.scheduler_task = None
-        self._sheet_rotation_done_for = None
         self.reminders = ReminderDispatcher(self.users, ledger or DeliveryLedger(
             str(Path(self.settings.state_dir) / "reminders.sqlite3")), self.bot)
 
@@ -98,38 +95,18 @@ class AsyncSchedulerBot:
     async def send_daily_notification(self):
         await self.reminders.tick()
 
-    async def run_monthly_transactions_sheet_rotation(self, now: datetime) -> None:
-        period = (now.year, now.month)
-        if self._sheet_rotation_done_for == period:
-            return
-        from bot.sheet import Sheet
-
-        def _rotate() -> bool:
-            return Sheet(self.settings).rotate_transactions_sheet_for_new_month(now.date())
-
-        try:
-            rotated = await asyncio.to_thread(_rotate)
-            self._sheet_rotation_done_for = period
-            if rotated:
-                logger.info("Лист Transactions скопирован в архив прошлого месяца и очищен.")
-        except Exception:
-            logger.error("Ошибка ротации листа Transactions; повторим позже")
-            return
-
     async def scheduler_loop(self):
-        from mini_app.backend.backups import SheetsBackup
-        from mini_app.backend.sheets import SheetsGateway
-        backup = SheetsBackup(SheetsGateway(self.settings), self.settings.state_dir)
+        from mini_app.backend.database_sync import DailyDatabaseSync
+        sync = DailyDatabaseSync(self.settings)
         while True:
             try:
                 await self.send_daily_notification()
-                now = datetime.now(ZoneInfo("Europe/Minsk"))
-                if now.day == 1:
-                    await self.run_monthly_transactions_sheet_rotation(now)
-                if self.settings.backup_enabled:
-                    await backup.run(now.date())
             except Exception:
-                logger.error("Ошибка фоновой задачи; повторим на следующем цикле")
+                logger.error("Ошибка отправки напоминаний; повторим на следующем цикле")
+            try:
+                await sync.tick()
+            except Exception:
+                logger.error("Ошибка фоновой синхронизации; повторим позже")
             await asyncio.sleep(30)
 
     async def run(self):

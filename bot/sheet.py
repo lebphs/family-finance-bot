@@ -1,7 +1,5 @@
 """Synchronous compatibility facade for bot worker threads; no import-time I/O."""
-from mini_app.backend.sheets import (
-    GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository, SheetsGateway,
-)
+from mini_app.backend.database import SQLiteCategoryRepository, SQLiteTransactionRepository
 from mini_app.backend.services import UserService
 from mini_app.backend.models import CurrentUser
 from config import load_settings
@@ -11,46 +9,45 @@ from decimal import Decimal
 
 
 class Sheet:
-    def __init__(self, settings=None, *, gateway=None):
+    def __init__(self, settings=None):
         settings = settings or load_settings()
-        self.gateway = gateway or SheetsGateway(settings)
-        self.categories = GoogleSheetsCategoryRepository(settings, gateway=self.gateway)
-        self.transactions = GoogleSheetsTransactionRepository(settings, gateway=self.gateway)
+        self.categories = SQLiteCategoryRepository(settings)
+        self.transactions = SQLiteTransactionRepository(settings)
 
     def get_statistics_by_categories(self):
-        def read():
-            rows = self.gateway.worksheet("Main").get("J11:K23")
-            result = [(row[0], row[1]) for row in rows if len(row) >= 2 and row[0]]
-            total = sum(float(str(value).replace(",", ".")) for _, value in result)
-            return result + [("🧾 Итого", str(total))]
-        return self.gateway.run(read, read_only=True)
+        today = datetime.now(ZoneInfo("Europe/Minsk")).date()
+        totals = {}
+        for item in self.transactions._list_sync():
+            if (item.date.year, item.date.month) == (today.year, today.month):
+                totals[item.category] = totals.get(item.category, Decimal(0)) + item.amount
+        return [(name, str(amount)) for name, amount in sorted(totals.items())] + [
+            ("🧾 Итого", str(sum(totals.values(), Decimal(0))))]
 
     def get_categories(self):
         return list(self.get_subcategories())
 
     def get_subcategories(self):
-        categories = self.gateway.run(self.categories._list_sync, read_only=True)
-        return {category.name: list(category.subcategories) for category in categories}
+        return {category.name: list(category.subcategories) for category in self.categories._list_sync()}
 
     def add_transaction(self, data: list, *, author: CurrentUser):
-        return self.gateway.run(
-            self.transactions._create_sync, date.fromisoformat(data[0]),
-            data[1], data[2], Decimal(str(data[3])), author,
-        )
+        return self.transactions._create_sync(date.fromisoformat(data[0]), data[1], data[2],
+                                              Decimal(str(data[3])), author)
 
     def rotate_transactions_sheet_for_new_month(self, today=None):
-        return self.gateway.run(self.transactions._rotate_sync, today or datetime.now(ZoneInfo("Europe/Minsk")).date())
+        return False
 
     def delete_last_transaction(self, *, author: CurrentUser):
-        # Legacy bot action affects a shared row; limit it to an active admin.
         UserService.require_admin(author)
-        def delete():
-            ws = self.gateway.worksheet("Transactions")
-            rows = ws.get_all_values(value_render_option="UNFORMATTED_VALUE")
-            if len(rows) < 2 or len(rows[1]) < 7 or not rows[1][6]:
-                return False
-            return self.transactions._delete_sync(str(rows[1][6]))
-        return self.gateway.run(delete)
+        items = self.transactions._list_sync()
+        if not items:
+            return False
+        # Bot's latest operation follows creation order, regardless of expense date.
+        def created(item):
+            value = item.created_at or datetime.min.replace(tzinfo=ZoneInfo("UTC"))
+            return value if value.tzinfo else value.replace(tzinfo=ZoneInfo("UTC"))
+        latest = max(items, key=created)
+        from mini_app.backend.transaction_version import transaction_version
+        return self.transactions._delete_sync(latest.transaction_id, transaction_version(latest))
 
     def send_excel_chart_as_image(self):
         from io import BytesIO

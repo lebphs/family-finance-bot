@@ -13,7 +13,7 @@ class ApiError(Exception):
 
 class RepositoryError(Exception):
     def __init__(self):
-        super().__init__("Не удалось обратиться к Google Sheets. Проверьте результат операции перед повтором.")
+        super().__init__("Не удалось обратиться к хранилищу данных. Проверьте результат операции перед повтором.")
 
 
 class RepositoryUnavailableError(RepositoryError):
@@ -22,7 +22,7 @@ class RepositoryUnavailableError(RepositoryError):
 
 class RepositorySchemaError(RepositoryError):
     def __init__(self):
-        Exception.__init__(self, "Структура Google Sheets не соответствует ожидаемой. Требуется проверка миграции.")
+        Exception.__init__(self, "Структура хранилища данных не соответствует ожидаемой. Требуется проверка миграции.")
 
 
 class UserAlreadyExistsError(ValueError):

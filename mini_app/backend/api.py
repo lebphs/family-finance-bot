@@ -12,8 +12,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from mini_app.backend.errors import ApiError, RepositoryError, RepositorySchemaError
 from mini_app.backend.models import CurrentUser, User
-from mini_app.backend.repositories import GoogleSheetsUserRepository, UserRepository, CategoryRepository, TransactionRepository
-from mini_app.backend.sheets import SheetsGateway, GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository
+from mini_app.backend.repositories import UserRepository, CategoryRepository, TransactionRepository
+from mini_app.backend.database import SQLiteUserRepository, SQLiteCategoryRepository, SQLiteTransactionRepository
 from mini_app.backend.runtime import BotRuntime
 from mini_app.backend.schemas import (
     CreateUserRequest,
@@ -78,11 +78,10 @@ def create_app(
     )
 
     status_service = ApplicationStatusService()
-    gateway = SheetsGateway(settings)
-    user_store = user_repository or GoogleSheetsUserRepository(settings, gateway=gateway)
+    user_store = user_repository or SQLiteUserRepository(settings)
     users = UserService(user_store)
-    categories = category_repository or GoogleSheetsCategoryRepository(settings, gateway=gateway)
-    app.state.transaction_repository = transaction_repository or GoogleSheetsTransactionRepository(settings, gateway=gateway)
+    categories = category_repository or SQLiteCategoryRepository(settings)
+    app.state.transaction_repository = transaction_repository or SQLiteTransactionRepository(settings)
     expenses = ExpenseService(app.state.transaction_repository, categories)
     init_data_verifier = TelegramInitDataVerifier(
         settings.bot_token,

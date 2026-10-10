@@ -91,7 +91,7 @@ def verify():
             assert request(asset.decode())[0] == 200
         for path in ["/api/me", "/api/reminders", "/api/home", "/api/statistics"]:
             assert request(path, headers={"X-Dev-Telegram-User-Id": "1"})[0] == 401
-        for path in ["/.env", "/google-credentials.json", "/data/delivery.sqlite3", "/config.py"]:
+        for path in ["/.env", "/google-credentials.json", "/data/delivery.sqlite3", "/data/finance.sqlite3", "/data/backups/finance-2026-10-10.sqlite3", "/config.py"]:
             assert request(path)[0] == 404
         for origin, allowed in [("https://finance.example", True), ("http://localhost:5173", False)]:
             _, headers, _ = request("/api/me", method="OPTIONS", headers={"Origin": origin, "Access-Control-Request-Method": "GET"})

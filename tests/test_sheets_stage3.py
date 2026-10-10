@@ -497,7 +497,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                 return None
         settings = Settings(bot_token="token", google_sheet_id="fake", dev_auth_enabled=True)
         app = create_app(settings, user_repository=UnknownUsers())
-        with patch("mini_app.backend.sheets.GoogleSheetsCategoryRepository.list") as categories:
+        with patch("mini_app.backend.database.SQLiteCategoryRepository.list") as categories:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                 self.assertEqual((await client.get("/api/categories")).status_code, 401)
                 response = await client.get("/api/categories", headers={"X-Dev-Telegram-User-Id": "1"})
@@ -512,7 +512,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         app = create_app(settings, user_repository=AllowedUsers())
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
                                      headers={"X-Dev-Telegram-User-Id": "1"}) as client:
-            with patch("mini_app.backend.sheets.GoogleSheetsCategoryRepository.list", side_effect=RepositorySchemaError()):
+            with patch("mini_app.backend.database.SQLiteCategoryRepository.list", side_effect=RepositorySchemaError()):
                 response = await client.get("/api/categories")
                 self.assertEqual(response.status_code, 500)
                 self.assertEqual(response.json()["error"]["code"], "storage_schema_error")
@@ -583,19 +583,22 @@ class BotBoundaryTests(unittest.IsolatedAsyncioTestCase):
             state.update_data.assert_not_called()
             state.set_state.assert_not_called()
 
-    async def test_legacy_shared_delete_requires_admin_and_permanent_id(self):
+    async def test_shared_database_delete_requires_admin(self):
+        from dataclasses import replace
+        from tempfile import TemporaryDirectory
         from mini_app.backend.errors import ApiError
         from bot.sheet import Sheet
-        book = FakeSpreadsheet()
-        gateway = SheetsGateway(SETTINGS, spreadsheet=book)
-        sheet = Sheet(SETTINGS, gateway=gateway)
-        member = CurrentUser(1, "А", UserRole.MEMBER)
-        with self.assertRaises(ApiError):
-            await asyncio.to_thread(sheet.delete_last_transaction, author=member)
-        admin = CurrentUser(2, "Б", UserRole.ADMIN)
-        self.assertFalse(await asyncio.to_thread(sheet.delete_last_transaction, author=admin))
-        await migrate(gateway, apply=True)
-        self.assertTrue(await asyncio.to_thread(sheet.delete_last_transaction, author=admin))
+        with TemporaryDirectory() as folder:
+            sheet = Sheet(replace(SETTINGS, state_dir=folder))
+            member = CurrentUser(1, "А", UserRole.MEMBER)
+            with self.assertRaises(ApiError):
+                await asyncio.to_thread(sheet.delete_last_transaction, author=member)
+            admin = CurrentUser(2, "Б", UserRole.ADMIN)
+            self.assertFalse(await asyncio.to_thread(sheet.delete_last_transaction, author=admin))
+            await sheet.transactions.create(date=date(2026, 9, 1), description="Тест",
+                                            category="Еда", amount=Decimal('1.00'), author=admin)
+            self.assertTrue(await asyncio.to_thread(sheet.delete_last_transaction, author=admin))
+            self.assertEqual(await sheet.transactions.list(), [])
 
 
 if __name__ == "__main__":

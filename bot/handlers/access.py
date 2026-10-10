@@ -1,6 +1,6 @@
 """Access checks for bot calls using the same allowlist as the API."""
 from mini_app.backend.errors import ApiError, RepositoryError
-from mini_app.backend.repositories import GoogleSheetsUserRepository
+from mini_app.backend.database import SQLiteUserRepository
 from mini_app.backend.services import UserService
 from config import load_settings
 
@@ -13,7 +13,7 @@ async def authorize_message(message):
         await target.answer("Нет доступа")
         return None
     try:
-        return await UserService(GoogleSheetsUserRepository(load_settings())).authorize(message.from_user.id)
+        return await UserService(SQLiteUserRepository(load_settings())).authorize(message.from_user.id)
     except (ApiError, RepositoryError) as error:
         await target.answer(str(error))
         return None
