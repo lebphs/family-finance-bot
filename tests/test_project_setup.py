@@ -7,12 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProjectSetupTests(unittest.TestCase):
-    def test_python_version_matches_docker_and_runtime(self):
+    def test_python_version_matches_docker_and_local_version(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-        runtime = (ROOT / "runtime.txt").read_text(encoding="utf-8").strip()
+        runtime = (ROOT / ".python-version").read_text(encoding="utf-8").strip()
 
         docker_version = re.search(r"^FROM python:(\d+\.\d+\.\d+)-slim$", dockerfile, re.MULTILINE)
-        runtime_version = re.fullmatch(r"python-(\d+\.\d+\.\d+)", runtime)
+        runtime_version = re.fullmatch(r"(\d+\.\d+\.\d+)", runtime)
 
         self.assertIsNotNone(docker_version)
         self.assertIsNotNone(runtime_version)

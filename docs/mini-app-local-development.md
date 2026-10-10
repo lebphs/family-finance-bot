@@ -41,7 +41,7 @@ SSH-соединение и Docker Desktop должны оставаться з�
 перезагрузки проверьте доступность туннеля. Адрес временный и может измениться.
 
 
-Не запускайте одновременно `python main.py` и Compose с тем же токеном.
+Не запускайте одновременно `python -m mini_app` и Compose с тем же токеном.
 Сигналами завершения управляет Uvicorn; aiogram polling запускается с
 `handle_signals=False`. Проверено штатное завершение контейнера с exit code 0.
 Не используйте `compose down -v`, если нужно сохранить отметки и резервные копии.
@@ -49,7 +49,7 @@ SSH-соединение и Docker Desktop должны оставаться з�
 ## Запуск в обычном браузере
 
 Для работы только с UI включите `VITE_LOCAL_PREVIEW=true` в
-`frontend/.env.local` и запустите `npm run dev` из `frontend`.
+`mini_app/frontend/.env.local` и запустите `npm run dev` из `mini_app/frontend`.
 На `http://127.0.0.1:5173` приложение откроется без Telegram и backend,
 с демонстрационными расходами. Все изменения остаются в памяти и сбрасываются
 при перезагрузке страницы. Режим действует только на localhost/127.0.0.1,
@@ -82,7 +82,7 @@ SSH-соединение и Docker Desktop должны оставаться з�
 3. Запустите backend в отдельном терминале:
 
    ```sh
-   python main.py
+   python -m mini_app
    ```
 
    Это также запускает существующего Telegram-бота. Не запускайте параллельно
@@ -91,12 +91,12 @@ SSH-соединение и Docker Desktop должны оставаться з�
 4. В другом терминале установите frontend и создайте его локальные настройки:
 
    ```sh
-   cd frontend
+   cd mini_app/frontend
    npm ci
    cp .env.example .env.local
    ```
 
-   В `frontend/.env.local` задайте:
+   В `mini_app/frontend/.env.local` задайте:
 
    ```dotenv
    VITE_DEV_AUTH_ENABLED=true
@@ -126,7 +126,7 @@ SDK загружается в `index.html`, а исходный `initData` пе�
 
 1. Отключите dev-авторизацию в обоих файлах:
    `DEV_AUTH_ENABLED=false` в корневом `.env` и
-   `VITE_DEV_AUTH_ENABLED=false` в `frontend/.env.local`. Перезапустите backend.
+   `VITE_DEV_AUTH_ENABLED=false` в `mini_app/frontend/.env.local`. Перезапустите backend.
    Оставьте `API_HOST=127.0.0.1` и `APP_ENV=development`.
 2. Установите [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)
    и в отдельном терминале выполните:
@@ -150,7 +150,7 @@ SDK загружается в `index.html`, а исходный `initData` пе�
      Адрес может измениться; при изменении обновите hostname в Vite и URL
      кнопки бота. SSH-соединение должно оставаться открытым.
 3. Из выданного адреса вида `https://example.trycloudflare.com` скопируйте
-   только hostname в `frontend/.env.local`:
+   только hostname в `mini_app/frontend/.env.local`:
 
    ```dotenv
    VITE_TUNNEL_HOST=example.trycloudflare.com
@@ -175,7 +175,7 @@ SDK загружается в `index.html`, а исходный `initData` пе�
 
 ```sh
 python -m unittest discover -s tests -v
-cd frontend
+cd mini_app/frontend
 npm test
 npm run build
 npx playwright install chromium
@@ -193,14 +193,14 @@ Unit-тесты проверяют dev/Telegram-авторизацию, кажд
 подменяют SDK и API, блокируют загрузку Telegram SDK из сети и проверяют
 мобильную ширину, обе темы, отказ и повторную загрузку. Реальные Telegram и
 Google Sheets в тестах не вызываются. Скриншоты находятся в игнорируемой
-`frontend/test-results/`.
+`mini_app/frontend/test-results/`.
 
 Браузерные проверки также запускают fake HTTP backend на `127.0.0.1:8000`
 для проверки настоящего Vite-прокси и удаления dev-заголовка на хосте туннеля.
 Перед `npm run test:e2e` остановите локальные backend и Vite: порты 8000 и 5173
 должны быть свободны.
 
-`npm run build` проверяет TypeScript и создаёт `frontend/dist`. Production
+`npm run build` проверяет TypeScript и создаёт `mini_app/frontend/dist`. Production
 выдача frontend и маршрутизация `/api` относятся к этапу публикации;
 `npm run preview` предназначен только для просмотра сборки и не проксирует API.
 

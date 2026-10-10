@@ -7,10 +7,10 @@ from uuid import uuid4
 
 import httpx
 
-from backend.api import create_app
-from backend.models import User, UserRole
-from backend.migration import migrate
-from backend.sheets import SheetsGateway, GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository
+from mini_app.backend.api import create_app
+from mini_app.backend.models import User, UserRole
+from mini_app.backend.migration import migrate
+from mini_app.backend.sheets import SheetsGateway, GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository
 from config import Settings
 from tests.test_sheets_stage3 import FakeSpreadsheet, SETTINGS
 from tests.test_users_api import FakeUserRepository

@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
-from backend.models import CurrentUser, Transaction, User, UserRole
+from mini_app.backend.models import CurrentUser, Transaction, User, UserRole
 
 
 class ExpenseFields(BaseModel):
@@ -54,7 +54,7 @@ class TransactionResponse(BaseModel):
 
     @classmethod
     def from_domain(cls, transaction: Transaction):
-        from backend.transaction_version import transaction_version
+        from mini_app.backend.transaction_version import transaction_version
         return cls(version=transaction_version(transaction), **{name: getattr(transaction, name) for name in cls.model_fields if name != "version"})
 
 

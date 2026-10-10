@@ -1,9 +1,9 @@
 """Synchronous compatibility facade for bot worker threads; no import-time I/O."""
-from backend.sheets import (
+from mini_app.backend.sheets import (
     GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository, SheetsGateway,
 )
-from backend.services import UserService
-from backend.models import CurrentUser
+from mini_app.backend.services import UserService
+from mini_app.backend.models import CurrentUser
 from config import load_settings
 from datetime import date, datetime
 from zoneinfo import ZoneInfo

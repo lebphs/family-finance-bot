@@ -7,21 +7,25 @@ Google Spreadsheet. The user-facing language is Russian.
 
 ## Architecture
 
-- `main.py` loads `.env` and starts `AsyncSchedulerBot`.
-- `scheduler_bot.py` configures aiogram, runs polling, sends daily reminders,
+- `mini_app/__main__.py` loads `.env` and starts Uvicorn; the API lifecycle
+  starts and stops Telegram polling through `mini_app/backend/runtime.py`.
+- `bot/scheduler_bot.py` configures aiogram, runs polling, sends daily reminders,
   and rotates the `Transactions` worksheet at the start of a new month.
-- `handlers/expenses.py` implements the expense-entry FSM: category, amount,
+- `bot/handlers/expenses.py` implements the expense-entry FSM: category, amount,
   then description/subcategory.
-- `handlers/user.py` handles statistics, chart generation, and deletion of the
+- `bot/handlers/user.py` handles statistics, chart generation, and deletion of the
   latest transaction.
-- `keyboards/user.py` builds reply and inline keyboards from spreadsheet data.
-- `sheet.py` is the Google Sheets gateway and contains chart generation.
+- `bot/keyboards/user.py` builds reply and inline keyboards from spreadsheet data.
+- `bot/sheet.py` adapts shared repositories and generates charts for the bot.
+- `mini_app/backend/` contains API and shared Google Sheets services.
+- `mini_app/frontend/` contains React/TypeScript UI and frontend tests.
+- `config.py` contains shared environment configuration.
 
 ## External configuration
 
 - Required environment variables: `BOT_TOKEN`, `GOOGLE_SHEET_ID`.
-- Google authentication currently uses `google-credentials.json` next to
-  `sheet.py`.
+- Google authentication uses `GOOGLE_APPLICATION_CREDENTIALS`, defaulting to
+  `google-credentials.json` in the project root.
 - Never print, commit, or expose values from `.env` or Google credentials.
 - The spreadsheet is expected to contain `Main`, `Preferences`, and
   `Transactions` worksheets.
@@ -33,13 +37,13 @@ Google Spreadsheet. The user-facing language is Russian.
 
 ```powershell
 python -m unittest discover -s tests -v
-python main.py
+python -m mini_app
 docker compose up --build
 ```
 
-There are currently no automated tests, so add focused tests when changing
-business logic. Avoid connecting to the real Telegram bot or spreadsheet in
-tests; mock those boundaries.
+Automated tests live in `tests/` and `mini_app/frontend/`. Add focused tests
+when changing business logic. Avoid connecting to the real Telegram bot or
+spreadsheet in tests; mock those boundaries.
 
 ## Implementation conventions
 
@@ -55,7 +59,10 @@ tests; mock those boundaries.
 - Do not overwrite unrelated local changes. In particular, check `git status`
   before editing.
 
-## Known issues to account for
+## Historical issues to account for
+
+The list below describes the original bot before Mini App implementation;
+verify current code and tests before treating an item as still unresolved.
 
 - The final category handler in `handlers/expenses.py` uses an incorrect
   lambda filter that currently accepts arbitrary unhandled messages.

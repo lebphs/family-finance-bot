@@ -1,6 +1,6 @@
 # Этап 7 — статистика
 
-Реализован этап 7 из `MINI_APP_IMPLEMENTATION_PLAN.md`. Изменения предыдущих
+Реализован этап 7 из `mini-app-implementation-plan.md`. Изменения предыдущих
 этапов сохранены; напоминания, публикация и остальные задачи этапа 8 не затронуты.
 
 ## API
@@ -87,7 +87,7 @@
 ```sh
 python -m unittest tests.test_statistics_stage7 -v
 python -m unittest discover -s tests -v
-cd frontend
+cd mini_app/frontend
 npm test
 npm run build
 npm run test:e2e

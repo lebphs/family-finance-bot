@@ -17,9 +17,9 @@
 Из корня проекта, с установленными зависимостями:
 
 ```powershell
-python -m backend.migration
-python -m backend.migration --apply
-python -m backend.migration
+python -m mini_app.backend.migration
+python -m mini_app.backend.migration --apply
+python -m mini_app.backend.migration
 ```
 
 Первая команда — dry run: никаких записей. Она проверяет обязательные листы,

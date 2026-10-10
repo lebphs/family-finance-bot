@@ -11,9 +11,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, field_validator
 
-from backend.errors import ApiError
-from backend.models import CurrentUser, User
-from backend.repositories import UserRepository
+from mini_app.backend.errors import ApiError
+from mini_app.backend.models import CurrentUser, User
+from mini_app.backend.repositories import UserRepository
 
 logger = logging.getLogger(__name__)
 

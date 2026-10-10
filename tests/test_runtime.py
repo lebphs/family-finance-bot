@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 
-from backend.runtime import BotRuntime
+from mini_app.backend.runtime import BotRuntime
 from config import Settings
 
 

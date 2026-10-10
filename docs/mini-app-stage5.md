@@ -1,6 +1,6 @@
 # Этап 5: главная страница и первая MVP-версия
 
-Реализован этап 5 из `MINI_APP_IMPLEMENTATION_PLAN.md`. Разделы управления
+Реализован этап 5 из `mini-app-implementation-plan.md`. Разделы управления
 транзакциями, расширенной статистики и настроек остаются каркасом.
 Локальный запуск описан в [инструкции](mini-app-local-development.md).
 Перед использованием реальной таблицы требуется миграция этапа 3.
@@ -56,7 +56,7 @@ Google Sheets. Дедупликация переживает перезапус�
 
 ```sh
 python -m unittest discover -s tests -v
-cd frontend
+cd mini_app/frontend
 npm test
 npm run build
 npm run test:e2e

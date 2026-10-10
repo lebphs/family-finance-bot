@@ -1,7 +1,7 @@
 import logging
 import unittest
 
-from backend.logging_config import SensitiveDataFilter
+from mini_app.backend.logging_config import SensitiveDataFilter
 
 
 class LoggingTests(unittest.TestCase):

@@ -8,7 +8,7 @@ from contextlib import suppress
 from typing import Protocol
 
 from config import Settings
-from scheduler_bot import AsyncSchedulerBot
+from bot.scheduler_bot import AsyncSchedulerBot
 
 
 logger = logging.getLogger(__name__)

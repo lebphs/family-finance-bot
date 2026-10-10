@@ -14,8 +14,8 @@ class AsyncSchedulerBot:
 
     def __init__(self, token, *, settings=None, users=None, ledger=None):
         from config import load_settings
-        from backend.repositories import GoogleSheetsUserRepository
-        from backend.reminders import DeliveryLedger, ReminderDispatcher
+        from mini_app.backend.repositories import GoogleSheetsUserRepository
+        from mini_app.backend.reminders import DeliveryLedger, ReminderDispatcher
         from pathlib import Path
 
         self.settings = settings or load_settings()
@@ -27,8 +27,8 @@ class AsyncSchedulerBot:
         self.reminders = ReminderDispatcher(self.users, ledger or DeliveryLedger(
             str(Path(self.settings.state_dir) / "reminders.sqlite3")), self.bot)
 
-        from handlers.expenses import register_expenses
-        from handlers.user import register_user
+        from bot.handlers.expenses import register_expenses
+        from bot.handlers.user import register_user
         self.dp.message.register(self.connect_chat, Command("start", "register"))
         self.dp.message.register(self.subscribe_chat, Command("subscribe"))
         self.dp.message.register(self.unsubscribe_chat, Command("unsubscribe"))
@@ -70,7 +70,7 @@ class AsyncSchedulerBot:
         await message.answer("✅ Чат подключён. Настройте напоминания в Mini App.", reply_markup=markup)
 
     async def subscribe_chat(self, message):
-        from backend.reminders import ReminderSettings
+        from mini_app.backend.reminders import ReminderSettings
         parts = (message.text or "").split()
         if len(parts) > 2:
             await message.answer("Используйте /subscribe или /subscribe HH:MM")
@@ -102,7 +102,7 @@ class AsyncSchedulerBot:
         period = (now.year, now.month)
         if self._sheet_rotation_done_for == period:
             return
-        from sheet import Sheet
+        from bot.sheet import Sheet
 
         def _rotate() -> bool:
             return Sheet(self.settings).rotate_transactions_sheet_for_new_month(now.date())
@@ -117,8 +117,8 @@ class AsyncSchedulerBot:
             return
 
     async def scheduler_loop(self):
-        from backend.backups import SheetsBackup
-        from backend.sheets import SheetsGateway
+        from mini_app.backend.backups import SheetsBackup
+        from mini_app.backend.sheets import SheetsGateway
         backup = SheetsBackup(SheetsGateway(self.settings), self.settings.state_dir)
         while True:
             try:

@@ -11,12 +11,12 @@ from unittest.mock import patch, Mock
 import httpx
 import gspread
 
-from backend.api import create_app
-from backend.errors import RepositoryError, RepositorySchemaError, RepositoryUnavailableError
-from backend.migration import migrate
-from backend.models import CurrentUser, User, UserRole
-from backend.repositories import GoogleSheetsUserRepository, USERS_HEADERS
-from backend.sheets import (
+from mini_app.backend.api import create_app
+from mini_app.backend.errors import RepositoryError, RepositorySchemaError, RepositoryUnavailableError
+from mini_app.backend.migration import migrate
+from mini_app.backend.models import CurrentUser, User, UserRole
+from mini_app.backend.repositories import GoogleSheetsUserRepository, USERS_HEADERS
+from mini_app.backend.sheets import (
     GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository,
     SheetsGateway, TRANSACTION_HEADERS,
 )
@@ -384,7 +384,7 @@ class SheetsTests(unittest.IsolatedAsyncioTestCase):
         original = self.book.worksheet("Preferences").get
         read = Mock(side_effect=[TimeoutError("secret"), original("B4:C43")])
         self.book.worksheet("Preferences").get = read
-        with patch("backend.sheets.time.sleep"):
+        with patch("mini_app.backend.sheets.time.sleep"):
             self.assertEqual(len(await self.categories.list()), 2)
         self.assertEqual(read.call_count, 2)
         self.book.worksheet("Preferences").get = original
@@ -418,9 +418,9 @@ class SheetsTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await migrate(self.gateway)).create_users)
 
     async def test_duplicate_user_keeps_application_conflict_error(self):
-        from backend.repositories import UserAlreadyExistsError
-        from backend.services import UserService
-        from backend.errors import ApiError
+        from mini_app.backend.repositories import UserAlreadyExistsError
+        from mini_app.backend.services import UserService
+        from mini_app.backend.errors import ApiError
         await self.prepare()
         repository = GoogleSheetsUserRepository(SETTINGS, gateway=self.gateway)
         user = User(9, "А", UserRole.ADMIN, True)
@@ -437,7 +437,7 @@ class SheetsTests(unittest.IsolatedAsyncioTestCase):
         response.json.return_value = {"error": {"message": "secret", "code": 429}}
         read = Mock(side_effect=gspread.exceptions.APIError(response))
         self.book.worksheet("Preferences").get = read
-        with patch("backend.sheets.time.sleep"), self.assertRaises(RepositoryUnavailableError) as caught:
+        with patch("mini_app.backend.sheets.time.sleep"), self.assertRaises(RepositoryUnavailableError) as caught:
             await self.categories.list()
         self.assertEqual(read.call_count, 3)
         self.assertNotIn("secret", str(caught.exception))
@@ -492,7 +492,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                 return None
         settings = Settings(bot_token="token", google_sheet_id="fake", dev_auth_enabled=True)
         app = create_app(settings, user_repository=UnknownUsers())
-        with patch("backend.sheets.GoogleSheetsCategoryRepository.list") as categories:
+        with patch("mini_app.backend.sheets.GoogleSheetsCategoryRepository.list") as categories:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                 self.assertEqual((await client.get("/api/categories")).status_code, 401)
                 response = await client.get("/api/categories", headers={"X-Dev-Telegram-User-Id": "1"})
@@ -507,19 +507,19 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         app = create_app(settings, user_repository=AllowedUsers())
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
                                      headers={"X-Dev-Telegram-User-Id": "1"}) as client:
-            with patch("backend.sheets.GoogleSheetsCategoryRepository.list", side_effect=RepositorySchemaError()):
+            with patch("mini_app.backend.sheets.GoogleSheetsCategoryRepository.list", side_effect=RepositorySchemaError()):
                 response = await client.get("/api/categories")
                 self.assertEqual(response.status_code, 500)
                 self.assertEqual(response.json()["error"]["code"], "storage_schema_error")
 
     async def test_imports_and_bot_construction_make_no_network_calls(self):
         with patch("gspread.service_account", side_effect=AssertionError("network")) as connect:
-            import handlers.expenses
-            import handlers.user
-            import keyboards.user
-            import sheet
-            from scheduler_bot import AsyncSchedulerBot
-            for module in (handlers.expenses, handlers.user, keyboards.user, sheet):
+            import bot.handlers.expenses as expenses_handlers
+            import bot.handlers.user as user_handlers
+            import bot.keyboards.user as user_keyboards
+            import bot.sheet as sheet_module
+            from bot.scheduler_bot import AsyncSchedulerBot
+            for module in (expenses_handlers, user_handlers, user_keyboards, sheet_module):
                 importlib.reload(module)
             bot = AsyncSchedulerBot("123456:" + "x" * 35, settings=SETTINGS)
             await bot.bot.session.close()
@@ -530,7 +530,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
 class BotBoundaryTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_save_keeps_fsm_data_and_uses_verified_author(self):
         from unittest.mock import AsyncMock
-        from handlers.expenses import process_record_description
+        from bot.handlers.expenses import process_record_description
         message = Mock(text="Описание")
         message.answer = AsyncMock()
         state = Mock()
@@ -540,9 +540,9 @@ class BotBoundaryTests(unittest.IsolatedAsyncioTestCase):
         author = CurrentUser(123, "Проверенный автор", UserRole.MEMBER)
         sheet = Mock()
         sheet.add_transaction.side_effect = RepositoryUnavailableError()
-        with patch("handlers.expenses.authorize_message", AsyncMock(return_value=author)), patch(
-            "handlers.expenses.Sheet", return_value=sheet
-        ), patch("handlers.expenses.user.categories_keyboard", AsyncMock(return_value=None)):
+        with patch("bot.handlers.expenses.authorize_message", AsyncMock(return_value=author)), patch(
+            "bot.handlers.expenses.Sheet", return_value=sheet
+        ), patch("bot.handlers.expenses.user.categories_keyboard", AsyncMock(return_value=None)):
             await process_record_description(message, state)
         self.assertEqual(sheet.add_transaction.call_args.kwargs["author"], author)
         state.clear.assert_not_called()
@@ -551,7 +551,7 @@ class BotBoundaryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_successful_save_clears_fsm_and_does_not_retry(self):
         from unittest.mock import AsyncMock
-        from handlers.expenses import process_record_description
+        from bot.handlers.expenses import process_record_description
         message = Mock(text="Без описания")
         message.answer = AsyncMock()
         state = Mock()
@@ -560,9 +560,9 @@ class BotBoundaryTests(unittest.IsolatedAsyncioTestCase):
         state.clear = AsyncMock()
         author = CurrentUser(123, "А", UserRole.MEMBER)
         sheet = Mock()
-        with patch("handlers.expenses.authorize_message", AsyncMock(return_value=author)), patch(
-            "handlers.expenses.Sheet", return_value=sheet
-        ), patch("handlers.expenses.user.categories_keyboard", AsyncMock(return_value=None)):
+        with patch("bot.handlers.expenses.authorize_message", AsyncMock(return_value=author)), patch(
+            "bot.handlers.expenses.Sheet", return_value=sheet
+        ), patch("bot.handlers.expenses.user.categories_keyboard", AsyncMock(return_value=None)):
             await process_record_description(message, state)
         sheet.add_transaction.assert_called_once()
         self.assertEqual(sheet.add_transaction.call_args.args[0][1], "")
@@ -570,7 +570,7 @@ class BotBoundaryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_numeric_input_does_not_change_fsm(self):
         from unittest.mock import AsyncMock
-        from handlers.expenses import process_amount
+        from bot.handlers.expenses import process_amount
         for text in ("abc", "0", "-2", "NaN", None):
             message = Mock(text=text, answer=AsyncMock())
             state = Mock(update_data=AsyncMock(), set_state=AsyncMock())
@@ -579,8 +579,8 @@ class BotBoundaryTests(unittest.IsolatedAsyncioTestCase):
             state.set_state.assert_not_called()
 
     async def test_legacy_shared_delete_requires_admin_and_permanent_id(self):
-        from backend.errors import ApiError
-        from sheet import Sheet
+        from mini_app.backend.errors import ApiError
+        from bot.sheet import Sheet
         book = FakeSpreadsheet()
         gateway = SheetsGateway(SETTINGS, spreadsheet=book)
         sheet = Sheet(SETTINGS, gateway=gateway)

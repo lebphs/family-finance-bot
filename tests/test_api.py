@@ -3,8 +3,8 @@ import unittest
 
 import httpx
 
-from backend.api import create_app
-from backend.errors import ApiError
+from mini_app.backend.api import create_app
+from mini_app.backend.errors import ApiError
 from config import Settings
 
 

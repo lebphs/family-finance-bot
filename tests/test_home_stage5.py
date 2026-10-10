@@ -8,11 +8,11 @@ from uuid import uuid4
 
 import httpx
 
-from backend.api import create_app
-from backend.migration import migrate
-from backend.models import CurrentUser, Transaction, User, UserRole
-from backend.services import ExpenseService
-from backend.sheets import GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository, SheetsGateway
+from mini_app.backend.api import create_app
+from mini_app.backend.migration import migrate
+from mini_app.backend.models import CurrentUser, Transaction, User, UserRole
+from mini_app.backend.services import ExpenseService
+from mini_app.backend.sheets import GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository, SheetsGateway
 from tests.test_sheets_stage3 import FakeSpreadsheet, SETTINGS
 from tests.test_users_api import FakeUserRepository
 from config import Settings
@@ -40,7 +40,7 @@ class HomeApiTests(unittest.IsolatedAsyncioTestCase):
         result = response.json()
         self.assertEqual((result['author_id'], result['author_name']), (42, 'Иван'))
         self.assertEqual((await self.transactions.get(result['transaction_id'])).amount, Decimal('23.45'))
-        with patch('backend.services.datetime') as clock:
+        with patch('mini_app.backend.services.datetime') as clock:
             clock.now.return_value = datetime(2026, 10, 3, tzinfo=timezone.utc)
             home = (await self.client.get('/api/home')).json()
         self.assertIn(result['transaction_id'], [item['transaction_id'] for item in home['recent']])
@@ -71,7 +71,7 @@ class HomeApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(await self.transactions.list()), before + 1)
         restarted = GoogleSheetsTransactionRepository(SETTINGS, gateway=SheetsGateway(SETTINGS, spreadsheet=self.book))
         service = ExpenseService(restarted, self.categories)
-        from backend.schemas import CreateExpenseRequest
+        from mini_app.backend.schemas import CreateExpenseRequest
         replay = await service.create(CreateExpenseRequest(**self.payload), CurrentUser(42, 'Новое имя', UserRole.MEMBER))
         self.assertEqual(replay.transaction_id, replies[0].json()['transaction_id'])
         self.assertEqual(replay.author_name, 'Иван')
@@ -163,7 +163,7 @@ class SummaryTests(unittest.IsolatedAsyncioTestCase):
                     Transaction(date(2026, 10, 1), '', 'Еда', Decimal('0.3'), transaction_id='aware', created_at=datetime(2026, 10, 1, 11, tzinfo=timezone.utc)),
                 ]
         service = ExpenseService(Transactions(), None)
-        with patch('backend.services.datetime') as clock:
+        with patch('mini_app.backend.services.datetime') as clock:
             clock.now.return_value = datetime(2026, 10, 1, tzinfo=timezone.utc)
             clock.min = datetime.min
             home = await service.home()

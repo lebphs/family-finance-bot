@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from config import ConfigurationError, Settings
-import main
+from mini_app import __main__ as main
 
 
 class StartupTests(unittest.TestCase):

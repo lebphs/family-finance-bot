@@ -15,10 +15,10 @@ import threading
 import time
 from uuid import uuid4
 
-from backend.errors import RepositoryError, RepositorySchemaError, RepositoryUnavailableError, UserAlreadyExistsError, TransactionConflictError
-from backend.models import Category, CurrentUser, Transaction
-from backend.errors import StaleTransactionError
-from backend.transaction_version import transaction_version
+from mini_app.backend.errors import RepositoryError, RepositorySchemaError, RepositoryUnavailableError, UserAlreadyExistsError, TransactionConflictError
+from mini_app.backend.models import Category, CurrentUser, Transaction
+from mini_app.backend.errors import StaleTransactionError
+from mini_app.backend.transaction_version import transaction_version
 from config import Settings
 
 TRANSACTION_HEADERS = ("telegram_user_id", "display_name", "transaction_id", "created_at", "updated_at")

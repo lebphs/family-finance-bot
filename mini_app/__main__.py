@@ -1,7 +1,7 @@
 import uvicorn
 
-from backend.api import create_app
-from backend.logging_config import configure_logging
+from mini_app.backend.api import create_app
+from mini_app.backend.logging_config import configure_logging
 from config import load_settings
 
 

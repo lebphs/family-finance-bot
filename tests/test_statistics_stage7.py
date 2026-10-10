@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from backend.api import create_app
-from backend.errors import RepositoryUnavailableError
-from backend.models import Transaction, User, UserRole
-from backend.statistics import StatisticsQuery, StatisticsService
-from backend.sheets import GoogleSheetsTransactionRepository, SheetsGateway
+from mini_app.backend.api import create_app
+from mini_app.backend.errors import RepositoryUnavailableError
+from mini_app.backend.models import Transaction, User, UserRole
+from mini_app.backend.statistics import StatisticsQuery, StatisticsService
+from mini_app.backend.sheets import GoogleSheetsTransactionRepository, SheetsGateway
 from config import Settings
 from tests.test_sheets_stage3 import FakeSpreadsheet, FakeWorksheet, EXTENDED, SETTINGS
 from tests.test_users_api import FakeUserRepository
@@ -69,7 +69,7 @@ class StatisticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.service.get(StatisticsQuery(months=2), date(2026, 1, 15))).months, ['2025-12', '2026-01'])
 
     async def test_default_clock_uses_minsk(self):
-        with patch('backend.statistics.datetime') as clock:
+        with patch('mini_app.backend.statistics.datetime') as clock:
             clock.now.return_value = datetime(2026, 1, 1, tzinfo=timezone.utc)
             result = await self.service.get(StatisticsQuery())
         self.assertEqual(str(clock.now.call_args.args[0]), 'Europe/Minsk')

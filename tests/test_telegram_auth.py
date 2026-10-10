@@ -4,7 +4,7 @@ import json
 import unittest
 from urllib.parse import urlencode
 
-from backend.telegram_auth import InitDataError, TelegramInitDataVerifier
+from mini_app.backend.telegram_auth import InitDataError, TelegramInitDataVerifier
 
 
 BOT_TOKEN = "123456:test-token"

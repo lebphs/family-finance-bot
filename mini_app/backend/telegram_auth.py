@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 from urllib.parse import parse_qsl
 
-from backend.models import VerifiedTelegramIdentity
+from mini_app.backend.models import VerifiedTelegramIdentity
 
 
 class InitDataError(ValueError):

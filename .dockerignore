@@ -26,11 +26,11 @@ htmlcov/
 temp_chart.png
 
 # Frontend dependencies and build caches
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/test-results/
-frontend/playwright-report/
+mini_app/frontend/node_modules/
+mini_app/frontend/dist/
+mini_app/frontend/.vite/
+mini_app/frontend/test-results/
+mini_app/frontend/playwright-report/
 node_modules/
 data/
 backups/

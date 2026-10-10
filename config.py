@@ -25,7 +25,7 @@ class Settings:
     dev_auth_enabled: bool = False
     google_credentials_path: str = "google-credentials.json"
     state_dir: str = "data"
-    frontend_dir: str = "frontend/dist"
+    frontend_dir: str = "mini_app/frontend/dist"
     backup_enabled: bool = True
 
     @property
@@ -98,7 +98,7 @@ class Settings:
             dev_auth_enabled=dev_auth_enabled,
             google_credentials_path=(values.get("GOOGLE_APPLICATION_CREDENTIALS") or "google-credentials.json"),
             state_dir=(values.get("STATE_DIR") or "data"),
-            frontend_dir=(values.get("FRONTEND_DIR") or "frontend/dist"),
+            frontend_dir=(values.get("FRONTEND_DIR") or "mini_app/frontend/dist"),
             backup_enabled=backup_value == "true",
         )
 

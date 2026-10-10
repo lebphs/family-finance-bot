@@ -3,7 +3,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock
 
-from scheduler_bot import AsyncSchedulerBot
+from bot.scheduler_bot import AsyncSchedulerBot
 
 
 class BotLifecycleTests(unittest.IsolatedAsyncioTestCase):

@@ -2,8 +2,8 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from backend.models import User, UserRole
-from backend.repositories import GoogleSheetsUserRepository
+from mini_app.backend.models import User, UserRole
+from mini_app.backend.repositories import GoogleSheetsUserRepository
 from config import Settings
 
 
@@ -48,7 +48,7 @@ class UserRepositoryTests(unittest.IsolatedAsyncioTestCase):
             calls.append(args[0].__name__)
             return await original_to_thread(function, *args, **kwargs)
 
-        with patch("backend.sheets.asyncio.to_thread", side_effect=tracked_to_thread):
+        with patch("mini_app.backend.sheets.asyncio.to_thread", side_effect=tracked_to_thread):
             user = await repository.get(10)
             created = await repository.create(User(20, "Новый", UserRole.ADMIN, True))
             updated = await repository.update(10, {"active": False})

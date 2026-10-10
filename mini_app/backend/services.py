@@ -7,11 +7,11 @@ from decimal import Decimal
 from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
 
-from backend.errors import ApiError, TransactionConflictError, StaleTransactionError
-from backend.transaction_version import transaction_version
-from backend.models import CurrentUser, User, UserRole
-from backend.repositories import CategoryRepository, TransactionRepository, UserAlreadyExistsError, UserRepository
-from backend.schemas import (CreateExpenseRequest, HomeResponse, CategoryTotal, TransactionResponse,
+from mini_app.backend.errors import ApiError, TransactionConflictError, StaleTransactionError
+from mini_app.backend.transaction_version import transaction_version
+from mini_app.backend.models import CurrentUser, User, UserRole
+from mini_app.backend.repositories import CategoryRepository, TransactionRepository, UserAlreadyExistsError, UserRepository
+from mini_app.backend.schemas import (CreateExpenseRequest, HomeResponse, CategoryTotal, TransactionResponse,
                              TransactionFilters, TransactionPage, TransactionParticipant, UpdateTransactionRequest)
 
 

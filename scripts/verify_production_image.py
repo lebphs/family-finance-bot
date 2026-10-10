@@ -25,7 +25,7 @@ class OfflineRuntime:
 
 def serve():
     import uvicorn
-    from backend.api import create_app
+    from mini_app.backend.api import create_app
     from config import Settings
     settings = Settings.from_mapping({
         "BOT_TOKEN": "offline-test-token", "GOOGLE_SHEET_ID": "offline-test-sheet",
@@ -52,15 +52,15 @@ def verify():
         path.name in {"google-credentials.json", "token.json"} or
         "credentials" in path.name.lower() and path.suffix == ".json")]
     assert not forbidden, "Secret files found (contents intentionally omitted)"
-    assert not (root / "frontend/node_modules").exists()
-    assert not (root / "frontend/src").exists()
+    assert not (root / "mini_app/frontend/node_modules").exists()
+    assert not (root / "mini_app/frontend/src").exists()
     patterns = [re.compile(rb"\b\d{6,12}:[A-Za-z0-9_-]{20,}\b"),
                 re.compile(rb"-----BEGIN (?:RSA )?PRIVATE KEY-----"),
                 re.compile(rb'"private_key"\s*:')]
-    for file in (root / "frontend/dist").rglob("*"):
+    for file in (root / "mini_app/frontend/dist").rglob("*"):
         if file.is_file():
             assert not any(pattern.search(file.read_bytes()) for pattern in patterns), "Secret shape found in public asset"
-    from backend.reminders import DeliveryLedger
+    from mini_app.backend.reminders import DeliveryLedger
     import tempfile
     with tempfile.TemporaryDirectory(dir=root / "data") as folder:
         path = str(Path(folder) / "delivery.sqlite3")
@@ -98,7 +98,7 @@ def verify():
             assert (headers.get("Access-Control-Allow-Origin") == origin) is allowed
         # Same HTTP request as Dockerfile's healthcheck.
         assert request("/health")[0] == 200
-        print("PASS: Uvicorn HTTP startup, healthcheck, built frontend/assets, denied dev auth, CORS, private paths")
+        print("PASS: Uvicorn HTTP startup, healthcheck, built mini_app/frontend/assets, denied dev auth, CORS, private paths")
     finally:
         process.terminate()
         process.join(timeout=10)

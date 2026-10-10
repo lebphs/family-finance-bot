@@ -1,7 +1,7 @@
 import asyncio
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 
-from sheet import Sheet
+from bot.sheet import Sheet
 
 
 async def categories_keyboard() -> ReplyKeyboardMarkup:

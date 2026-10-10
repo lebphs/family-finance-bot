@@ -1,6 +1,6 @@
 # Этап 6 — управление транзакциями
 
-Объём соответствует этапу 6 **MINI_APP_IMPLEMENTATION_PLAN.md**: управление
+Объём соответствует этапу 6 **mini-app-implementation-plan.md**: управление
 транзакциями. Статистика этапа 7 и напоминания этапа 8 не реализуются здесь.
 Существующие изменения этапа 5 сохранены.
 
@@ -80,7 +80,7 @@ Frontend-тесты проверяют фильтры и страницы, пр�
 
 ```sh
 python -m unittest discover -s tests -v
-cd frontend
+cd mini_app/frontend
 npm test
 npm run build
 npm run test:e2e

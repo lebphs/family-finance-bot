@@ -1,0 +1,60 @@
+name: family-finance
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      MINI_APP_HOST: ${MINI_APP_HOST:?Set MINI_APP_HOST in .env}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bot:
+    image: family-finance-mini-app:production
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      DEV_AUTH_ENABLED: "false"
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      PORT: "8000"
+      STATE_DIR: /app/data
+      FRONTEND_DIR: /app/mini_app/frontend/dist
+      GOOGLE_APPLICATION_CREDENTIALS: /app/google-credentials.json
+      BACKUP_ENABLED: "true"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - type: bind
+        source: ./google-credentials.json
+        target: /app/google-credentials.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - finance-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  finance-data:
+  caddy-data:
+  caddy-config:

@@ -8,9 +8,9 @@ from urllib.parse import urlencode
 
 import httpx
 
-from backend.api import create_app
-from backend.models import User, UserRole
-from backend.repositories import UserAlreadyExistsError
+from mini_app.backend.api import create_app
+from mini_app.backend.models import User, UserRole
+from mini_app.backend.repositories import UserAlreadyExistsError
 from config import Settings
 
 

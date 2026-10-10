@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Protocol
 
-from backend.models import Category, CurrentUser, Transaction, User, UserRole
-from backend.sheets import AsyncSheetsRepository, GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository
-from backend.errors import RepositorySchemaError, UserAlreadyExistsError
+from mini_app.backend.models import Category, CurrentUser, Transaction, User, UserRole
+from mini_app.backend.sheets import AsyncSheetsRepository, GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository
+from mini_app.backend.errors import RepositorySchemaError, UserAlreadyExistsError
 from datetime import date
 from decimal import Decimal
 

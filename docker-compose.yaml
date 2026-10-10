@@ -16,7 +16,7 @@ services:
       API_PORT: "8000"
       PORT: "8000"
       STATE_DIR: /app/data
-      FRONTEND_DIR: /app/frontend/dist
+      FRONTEND_DIR: /app/mini_app/frontend/dist
       GOOGLE_APPLICATION_CREDENTIALS: /app/google-credentials.json
     restart: unless-stopped
     ports:

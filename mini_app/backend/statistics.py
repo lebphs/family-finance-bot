@@ -7,8 +7,8 @@ import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from backend.repositories import TransactionRepository
-from backend.schemas import CategoryTotal, TransactionParticipant
+from mini_app.backend.repositories import TransactionRepository
+from mini_app.backend.schemas import CategoryTotal, TransactionParticipant
 
 
 class StatisticsQuery(BaseModel):

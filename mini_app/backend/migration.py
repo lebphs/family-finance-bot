@@ -6,9 +6,9 @@ import asyncio
 from dataclasses import dataclass
 from uuid import uuid4
 
-from backend.errors import RepositoryError, RepositorySchemaError
-from backend.repositories import USERS_HEADERS
-from backend.sheets import SheetsGateway, TRANSACTION_HEADERS, expanded, has_transaction, transaction_worksheets
+from mini_app.backend.errors import RepositoryError, RepositorySchemaError
+from mini_app.backend.repositories import USERS_HEADERS
+from mini_app.backend.sheets import SheetsGateway, TRANSACTION_HEADERS, expanded, has_transaction, transaction_worksheets
 from config import load_settings
 
 

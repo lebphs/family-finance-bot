@@ -10,14 +10,14 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from backend.api import create_app
-from backend.backups import SheetsBackup
-from backend.models import User, UserRole
-from backend.reminders import DeliveryLedger, ReminderDispatcher
-from backend.repositories import GoogleSheetsUserRepository, USERS_HEADERS, _user_to_row
-from backend.sheets import SheetsGateway
+from mini_app.backend.api import create_app
+from mini_app.backend.backups import SheetsBackup
+from mini_app.backend.models import User, UserRole
+from mini_app.backend.reminders import DeliveryLedger, ReminderDispatcher
+from mini_app.backend.repositories import GoogleSheetsUserRepository, USERS_HEADERS, _user_to_row
+from mini_app.backend.sheets import SheetsGateway
 from config import Settings
-from scheduler_bot import AsyncSchedulerBot
+from bot.scheduler_bot import AsyncSchedulerBot
 from tests.test_users_api import FakeUserRepository
 from tests.test_sheets_stage3 import FakeWorksheet
 
@@ -96,7 +96,7 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failure_keeps_subscription_and_next_day_is_attempted(self):
         self.bot.send_message.side_effect = TimeoutError('BOT_TOKEN=do-not-log')
-        with self.assertLogs('backend.reminders', level='ERROR') as logs:
+        with self.assertLogs('mini_app.backend.reminders', level='ERROR') as logs:
             await self.dispatcher().tick(self.now)
         self.assertNotIn('do-not-log', str(logs.output))
         self.assertEqual(self.users.users[1], self.user)
@@ -201,9 +201,9 @@ class ProductionTests(unittest.IsolatedAsyncioTestCase):
         dockerfile = (root / "Dockerfile").read_text()
         self.assertIn("npm ci", dockerfile)
         self.assertIn("npm run build", dockerfile)
-        self.assertIn("COPY --from=frontend /build/dist ./frontend/dist", dockerfile)
+        self.assertIn("COPY --from=frontend /build/dist ./mini_app/frontend/dist", dockerfile)
         self.assertNotIn("COPY . .", dockerfile)
-        self.assertNotIn("COPY frontend/ ./", dockerfile)
+        self.assertNotIn("COPY mini_app/frontend/ ./", dockerfile)
         self.assertIn("USER appuser", dockerfile)
         self.assertIn("finance-data:/app/data", (root / "docker-compose.yaml").read_text())
 

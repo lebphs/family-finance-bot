@@ -10,12 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from backend.errors import ApiError, RepositoryError, RepositorySchemaError
-from backend.models import CurrentUser, User
-from backend.repositories import GoogleSheetsUserRepository, UserRepository, CategoryRepository, TransactionRepository
-from backend.sheets import SheetsGateway, GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository
-from backend.runtime import BotRuntime
-from backend.schemas import (
+from mini_app.backend.errors import ApiError, RepositoryError, RepositorySchemaError
+from mini_app.backend.models import CurrentUser, User
+from mini_app.backend.repositories import GoogleSheetsUserRepository, UserRepository, CategoryRepository, TransactionRepository
+from mini_app.backend.sheets import SheetsGateway, GoogleSheetsCategoryRepository, GoogleSheetsTransactionRepository
+from mini_app.backend.runtime import BotRuntime
+from mini_app.backend.schemas import (
     CreateUserRequest,
     CurrentUserResponse,
     UpdateUserRequest,
@@ -25,10 +25,10 @@ from backend.schemas import (
     HomeResponse,
     TransactionFilters, TransactionPage, TransactionParticipant, UpdateTransactionRequest,
 )
-from backend.reminders import ReminderService, ReminderSettings, ReminderResponse
-from backend.services import ApplicationStatusService, UserService, ExpenseService
-from backend.statistics import StatisticsQuery, StatisticsResponse, StatisticsService
-from backend.telegram_auth import InitDataError, TelegramInitDataVerifier
+from mini_app.backend.reminders import ReminderService, ReminderSettings, ReminderResponse
+from mini_app.backend.services import ApplicationStatusService, UserService, ExpenseService
+from mini_app.backend.statistics import StatisticsQuery, StatisticsResponse, StatisticsService
+from mini_app.backend.telegram_auth import InitDataError, TelegramInitDataVerifier
 from config import Settings
 
 

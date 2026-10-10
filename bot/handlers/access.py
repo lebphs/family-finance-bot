@@ -1,7 +1,7 @@
 """Access checks for bot calls using the same allowlist as the API."""
-from backend.errors import ApiError, RepositoryError
-from backend.repositories import GoogleSheetsUserRepository
-from backend.services import UserService
+from mini_app.backend.errors import ApiError, RepositoryError
+from mini_app.backend.repositories import GoogleSheetsUserRepository
+from mini_app.backend.services import UserService
 from config import load_settings
 
 

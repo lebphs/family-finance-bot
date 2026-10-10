@@ -1,8 +1,8 @@
 import asyncio
-from backend.errors import ApiError, RepositoryError
-from handlers.access import authorize_message
+from mini_app.backend.errors import ApiError, RepositoryError
+from bot.handlers.access import authorize_message
 from aiogram import Dispatcher, F, types
-from sheet import Sheet
+from bot.sheet import Sheet
 
 async def show_statistics(callback: types.CallbackQuery):
     if await authorize_message(callback) is None:

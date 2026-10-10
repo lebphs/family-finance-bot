@@ -3,7 +3,7 @@ from dataclasses import asdict
 from hashlib import sha256
 import json
 
-from backend.models import Transaction
+from mini_app.backend.models import Transaction
 
 
 def transaction_version(transaction: Transaction) -> str:

@@ -9,10 +9,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message
 
-from backend.errors import RepositoryError
-from handlers.access import authorize_message
-from keyboards import user
-from sheet import Sheet
+from mini_app.backend.errors import RepositoryError
+from bot.handlers.access import authorize_message
+from bot.keyboards import user
+from bot.sheet import Sheet
 
 
 class ExpenseState(StatesGroup):
