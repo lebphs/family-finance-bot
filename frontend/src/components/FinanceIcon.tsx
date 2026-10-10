@@ -32,7 +32,11 @@ export function categoryIcon(name: string): IconName {
   if (/живот|питом|кот|собак/.test(value)) return 'pet';
   return 'other';
 }
-export const categoryColors = ['#c16c8b', '#679db3', '#80909e', '#d78c76', '#b396c3', '#b79956', '#76a898', '#8f9ccb', '#ab8e9e', '#7cab75', '#cd9570', '#79aaaf'];
+export const categoryColors = [
+  '#ff5a67', '#3b9eff', '#ffda47', '#aa7dff', '#38d996',
+  '#ff963d', '#45d9ee', '#f65ac6', '#bce345', '#c89b63',
+  '#bcc7dc', '#6573ff', '#ffb7a0',
+];
 export function FinanceIcon({ name, className = '' }: { name: IconName; className?: string }) {
   return <svg className={className} viewBox="0 0 34 34" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
 }

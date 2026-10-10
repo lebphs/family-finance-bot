@@ -121,9 +121,6 @@ button:disabled { opacity: .6; cursor: wait; }
 .bottom-nav button { color: var(--navy-hint); }
 .bottom-nav button[aria-current='page'] { background: var(--navy-bg); color: var(--navy-strong); }
 .nav-icon { width: 25px; height: 25px; }
-.extra-categories { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-.extra-categories button { border: 1px solid var(--navy-border); border-radius: 8px; min-height: 44px; background: var(--navy-surface); color: var(--navy-text); display: flex; align-items: center; gap: 8px; }
-.extra-categories svg { width: 24px; height: 24px; }
 .expense-editor { position: fixed; inset: 0; z-index: 10; height: var(--app-height, 100dvh); overflow-y: auto; overscroll-behavior: contain; background: var(--navy-bg); color: var(--navy-text); padding-bottom: calc(20px + var(--safe-bottom)); }
 .editor-header { background: var(--navy); color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(18px + var(--safe-top)) calc(18px + var(--safe-right)) 18px calc(18px + var(--safe-left)); }
 .editor-header button { background: transparent; border: 0; color: #fff; min-height: 44px; padding: 0; }
@@ -192,3 +189,23 @@ html { overscroll-behavior-y: contain; }
 .transaction-editor .primary-button, .transaction-editor form > .danger-button { width: 100%; }
 .transaction-editor .transaction-meta { margin-bottom: 16px; }
 .chart-note { font-size: .8rem; color: var(--app-hint); margin-top: 12px; }
+
+/* Every category shares the orbit, including the thirteenth category. */
+.expense-wheel-dense { aspect-ratio: 1 / 1.18; }
+.expense-wheel-dense .orbit-category { width: 15%; max-width: 64px; }
+.expense-wheel-dense .orbit-category svg { width: 29px; height: 29px; }
+.expense-wheel-dense .orbit-category span { width: 70px; max-width: 70px; font-size: .6rem; }
+.donut { height: auto; aspect-ratio: 1; top: 50%; transform: translateY(-50%); }
+.donut-share { fill: #0b1426; font-size: 9px; font-weight: 700; }
+.category-marker { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.orbit-label .category-marker { margin-right: 3px; vertical-align: middle; }
+.wheel-legend { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 10px; }
+.wheel-legend li { display: flex; align-items: center; gap: 8px; font-size: .8rem; }
+.wheel-legend-name { flex: 1; overflow-wrap: anywhere; min-width: 0; }
+.wheel-legend strong { font-size: .8rem; white-space: nowrap; }
+.wheel-legend small { min-width: 34px; text-align: right; color: var(--app-hint); }
+@media (max-width: 340px) {
+  .expense-wheel-dense { aspect-ratio: 1 / 1.45; }
+  .expense-wheel-dense .orbit-category span { width: 58px; max-width: 58px; font-size: .55rem; }
+  .expense-wheel-dense .orbit-category svg { width: 25px; height: 25px; }
+}

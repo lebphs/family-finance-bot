@@ -129,7 +129,6 @@ export function Home({ refresh = 0, client, onDenied }: { refresh?: number; clie
       <div className="month-heading"><span aria-hidden="true">—</span><h2 id="overview-title">{summary ? new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${summary.month}-01T00:00:00Z`)) : 'Текущий месяц'}</h2><span aria-hidden="true">—</span></div>
       <p className="overview-hint">Нажмите на категорию, чтобы добавить расход</p>
       <ExpenseWheel categories={categories} summary={summary} disabled={saving || uncertain} onCategory={openExpense} />
-      {categories.length > 12 && <div className="extra-categories">{categories.slice(12).map((item) => <button type="button" key={item.name} disabled={saving || uncertain} onClick={() => openExpense(item.name)}><FinanceIcon name={categoryIcon(item.name)} />{item.name}</button>)}</div>}
       {uncertain && <button className="secondary-button" onClick={() => openExpense()}>Продолжить сохранение</button>}
       {success && <p className="save-success" role="status">{success}</p>}
 

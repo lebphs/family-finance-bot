@@ -59,6 +59,9 @@ test('иконки всех категорий: выбор, клавиатура
   await page.route('**/api/home', (route) => route.fulfill({ json: { month: '2026-10', total: '1000', previous_total: '900', change: '100', change_percent: '11.11', categories: names.slice(0, 5).map(category => ({ category, amount: '200' })), recent: [] } }));
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Добавить расход: Продукты' })).toBeVisible();
+  await expect(page.locator('.expense-wheel .orbit-category')).toHaveCount(names.length);
+  await expect(page.locator('.extra-categories')).toHaveCount(0);
+  await expect(page.getByRole('list', { name: 'Категории на круговой диаграмме' })).toContainText('Продукты');
   await page.screenshot({ path: test.info().outputPath('category-wheel.png'), fullPage: true });
   await page.getByRole('button', { name: 'Добавить расход: Продукты' }).click();
   await expect(page.getByLabel('Категория', { exact: true })).toHaveValue('Продукты');
@@ -72,9 +75,35 @@ test('иконки всех категорий: выбор, клавиатура
   await expect(page.getByRole('button', { name: 'Отменить' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Образование', exact: true }).click();
+  await page.getByRole('button', { name: 'Добавить расход: Образование', exact: true }).click();
   await expect(page.getByLabel('Категория', { exact: true })).toHaveValue('Образование');
   await page.getByRole('button', { name: 'Отменить' }).click();
   await page.setViewportSize({ width: 320, height: 740 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('тринадцать категорий с длинными названиями и обозначениями секторов', async ({ page }) => {
+  const names = ['🥩 Продукты', '🩸 Здоровье', '🎁 Подарки', '🏀 Спорт', '👨🏻‍🍳 Еда вне дома', '🚘 Машина', '🚗 Транспорт', '🕺 Развлечения', '👕 Одежда', '🏡 Дом', '💆🏻‍♂️ Уход за собой', '🧠 Развитие', '💵 Счета'];
+  await page.route('https://telegram.org/**', route => route.abort());
+  await page.route('**/api/me', route => route.fulfill({ json: { telegram_user_id: 42, display_name: 'Иван', role: 'member' } }));
+  await page.route('**/api/categories', route => route.fulfill({ json: names.map(name => ({ name, subcategories: [] })) }));
+  await page.route('**/api/home', route => route.fulfill({ json: { month: '2026-10', total: '25', previous_total: '0', change: '25', change_percent: null, recent: [], categories: [{ category: names[2], amount: '15' }, { category: names[3], amount: '5' }, { category: names[4], amount: '5' }] } }));
+  await page.goto('/');
+  await expect(page.locator('.expense-wheel .orbit-category')).toHaveCount(13);
+  await expect(page.getByRole('list', { name: 'Категории на круговой диаграмме' })).toContainText('15,00 BYN');
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.screenshot({ path: test.info().outputPath(`wheel-13-${width}.png`), fullPage: true });
+    const bounds = await page.locator('.orbit-category').evaluateAll(elements => elements.map(element => {
+      const box = element.getBoundingClientRect(); return { x: box.x, y: box.y, right: box.right, bottom: box.bottom };
+    }));
+    for (const box of bounds) { expect(box.x).toBeGreaterThanOrEqual(0); expect(box.right).toBeLessThanOrEqual(width); }
+    for (let i = 0; i < bounds.length; i++) for (let j = i + 1; j < bounds.length; j++) {
+      const a = bounds[i], b = bounds[j];
+      expect(a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y, `Overlap at ${width}: ${names[i]} ${JSON.stringify(a)} / ${names[j]} ${JSON.stringify(b)}`).toBe(true);
+    }
+    await page.screenshot({ path: test.info().outputPath(`wheel-13-${width}.png`), fullPage: true });
+  }
+  await page.getByRole('button', { name: `Добавить расход: ${names[12]}` }).click();
+  await expect(page.getByLabel('Категория', { exact: true })).toHaveValue(names[12]);
 });
