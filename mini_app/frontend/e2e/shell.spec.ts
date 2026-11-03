@@ -4,6 +4,9 @@ import { createServer } from 'node:http';
 
 // All external boundaries are intercepted. No bot, spreadsheet or Telegram request.
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/trips', route => route.fulfill({ json: [] }));
+  await page.route('**/api/travel-mode', route => route.fulfill({ json: { trip: null, currencies: ['BYN', 'EUR', 'USD'] } }));
+  await page.route('**/api/categories?travel=true', route => route.fulfill({ json: [] }));
   await page.route('https://telegram.org/**', (route) => route.abort());
   await page.route('**/api/transactions?*', (route) => route.fulfill({ json: { items: [], total: 0, next_offset: null } }));
   await page.route('**/api/transactions/participants', (route) => route.fulfill({ json: [] }));

@@ -7,6 +7,8 @@ const empty: HomeSummary = { month: '2026-10', total: '0', previous_total: '0', 
 const transaction: Transaction = { transaction_id: 'saved-id', date: '2026-10-03', amount: '12.50', category: 'Еда', description: 'Кафе', author_id: 42, author_name: 'Иван', created_at: null, updated_at: null };
 function setup() {
   const client = new ApiClient();
+  vi.spyOn(client, 'trips').mockResolvedValue([]);
+  vi.spyOn(client, 'travelContext').mockResolvedValue({ trip: null, currencies: ['BYN', 'EUR', 'USD'] });
   vi.spyOn(client, 'categories').mockResolvedValue([{ name: 'Еда', subcategories: ['Кафе'] }]);
   vi.spyOn(client, 'home').mockResolvedValue(empty);
   vi.spyOn(client, 'createExpense').mockResolvedValue(transaction);
@@ -49,6 +51,8 @@ describe('главная страница этапа 5', () => {
 
   it('поздняя первоначальная сводка не перезаписывает результат сохранения', async () => {
     const client = new ApiClient();
+  vi.spyOn(client, 'trips').mockResolvedValue([]);
+  vi.spyOn(client, 'travelContext').mockResolvedValue({ trip: null, currencies: ['BYN', 'EUR', 'USD'] });
     vi.spyOn(client, 'categories').mockResolvedValue([{ name: 'Еда', subcategories: ['Кафе'] }]);
     let finish!: (value: HomeSummary) => void;
     vi.spyOn(client, 'home').mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }))
@@ -68,7 +72,7 @@ describe('главная страница этапа 5', () => {
     vi.mocked(client.home).mockResolvedValue({ ...empty, total: '12.50', change: '12.50', categories: [{ category: 'Еда', amount: '12.50' }], recent: [transaction] });
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить расход' }));
     expect(await screen.findByText('Расход сохранён.')).toBeInTheDocument();
-    expect(client.createExpense).toHaveBeenCalledWith({ request_id: expect.any(String), amount: '12.50', category: 'Еда', description: 'Кафе', date: '2026-10-03' });
+    expect(client.createExpense).toHaveBeenCalledWith({ trip_id: null, currency: 'BYN', request_id: expect.any(String), amount: '12.50', category: 'Еда', description: 'Кафе', date: '2026-10-03' });
     expect(await screen.findByText('12,50')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Расходы за текущий месяц' })).not.toBeInTheDocument();
     expect(screen.queryByText('Последние операции')).not.toBeInTheDocument();
@@ -135,6 +139,8 @@ describe('главная страница этапа 5', () => {
 
   it('повторяет неопределённое сохранение даже после исчезновения категорий', async () => {
     const client = new ApiClient();
+  vi.spyOn(client, 'trips').mockResolvedValue([]);
+  vi.spyOn(client, 'travelContext').mockResolvedValue({ trip: null, currencies: ['BYN', 'EUR', 'USD'] });
     vi.spyOn(client, 'categories').mockResolvedValueOnce([{ name: 'Еда', subcategories: ['Кафе'] }])
       .mockResolvedValue([]);
     vi.spyOn(client, 'home').mockRejectedValueOnce(new ApiError(503, 'unavailable', 'Ошибка'))
@@ -169,6 +175,8 @@ describe('главная страница этапа 5', () => {
 
   it('повторяет загрузку категорий после ошибки', async () => {
     const client = new ApiClient();
+  vi.spyOn(client, 'trips').mockResolvedValue([]);
+  vi.spyOn(client, 'travelContext').mockResolvedValue({ trip: null, currencies: ['BYN', 'EUR', 'USD'] });
     vi.spyOn(client, 'categories').mockRejectedValueOnce(new ApiError(503, 'unavailable', 'Ошибка')).mockResolvedValue([{ name: 'Еда', subcategories: [] }]);
     vi.spyOn(client, 'home').mockResolvedValue(empty);
     render(<Home client={client} onDenied={vi.fn()} onTransactions={vi.fn()} />);

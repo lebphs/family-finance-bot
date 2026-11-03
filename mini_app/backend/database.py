@@ -29,6 +29,13 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS transactions_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS transactions_author ON transactions(author_id);
+CREATE TABLE IF NOT EXISTS trips (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS travel_preferences (user_id INTEGER PRIMARY KEY, trip_id TEXT);
+CREATE TABLE IF NOT EXISTS travel_categories (name TEXT PRIMARY KEY, payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS exchange_rates (
+ currency TEXT NOT NULL, date TEXT NOT NULL, rate TEXT NOT NULL,
+ rate_date TEXT NOT NULL, source TEXT NOT NULL, PRIMARY KEY(currency, date)
+);
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
@@ -49,6 +56,11 @@ def transaction_from_json(value):
     fields['amount'] = Decimal(fields['amount'])
     for name in ('created_at', 'updated_at'):
         fields[name] = datetime.fromisoformat(fields[name]) if fields[name] else None
+    for name in ('original_amount', 'exchange_rate'):
+        if fields.get(name) is not None:
+            fields[name] = Decimal(fields[name])
+    if fields.get('rate_date'):
+        fields['rate_date'] = date.fromisoformat(fields['rate_date'])
     return Transaction(**fields)
 
 
@@ -74,13 +86,18 @@ class Database:
             if connection is not None:
                 connection.close()
 
-    def snapshot(self):
+    def snapshot(self, *, include_travel=False):
         with self.connection() as conn:
             users = [user_from_json(row[0]) for row in conn.execute('SELECT payload FROM users ORDER BY id')]
             categories = [Category(**{**json.loads(row[0]), 'subcategories': tuple(json.loads(row[0])['subcategories'])})
                           for row in conn.execute('SELECT payload FROM categories ORDER BY rowid')]
             transactions = [transaction_from_json(row[0]) for row in conn.execute(
                 'SELECT payload FROM transactions ORDER BY date DESC, rowid DESC')]
+            if include_travel:
+                from mini_app.backend.travel import trip_from_json
+                trips = [trip_from_json(row[0]) for row in conn.execute('SELECT payload FROM trips ORDER BY rowid')]
+                travel_categories = [json.loads(row[0]) for row in conn.execute('SELECT payload FROM travel_categories ORDER BY rowid')]
+                return users, categories, transactions, trips, travel_categories
             return users, categories, transactions
 
     def get_metadata(self, key):
@@ -178,20 +195,20 @@ class SQLiteTransactionRepository:
                 or not item.amount.is_finite() or item.amount <= 0):
             raise ValueError('Invalid transaction')
 
-    async def create(self, *, date, description, category, amount, author, transaction_id=None):
-        return await asyncio.to_thread(self._create_sync, date, description, category, amount, author, transaction_id)
+    async def create(self, *, date, description, category, amount, author, transaction_id=None, **details):
+        return await asyncio.to_thread(self._create_sync, date, description, category, amount, author, transaction_id, **details)
 
-    def _create_sync(self, expense_date, description, category, amount, author, transaction_id=None):
+    def _create_sync(self, expense_date, description, category, amount, author, transaction_id=None, **details):
         if not isinstance(author, CurrentUser) or author.telegram_user_id <= 0:
             raise ValueError('Invalid author')
         now = datetime.now(timezone.utc)
         item = Transaction(expense_date, description, category, Decimal(str(amount)),
-                           author.telegram_user_id, author.display_name, transaction_id or str(uuid4()), now, now)
+                           author.telegram_user_id, author.display_name, transaction_id or str(uuid4()), now, now, **details)
         self._validate(item)
         with self.database.connection(write=True) as conn:
             existing = self._find(conn, item.transaction_id)
             if existing:
-                fields = ('date', 'description', 'category', 'amount', 'author_id')
+                fields = ('date', 'description', 'category', 'amount', 'author_id', 'trip_id', 'original_amount', 'currency')
                 if any(getattr(existing, field) != getattr(item, field) for field in fields):
                     raise TransactionConflictError()
                 return existing
@@ -203,7 +220,7 @@ class SQLiteTransactionRepository:
         return await asyncio.to_thread(self._update_sync, transaction_id, changes, expected_version)
 
     def _update_sync(self, transaction_id, changes, expected_version=None):
-        if not changes or set(changes) - {'date', 'description', 'category', 'amount'}:
+        if not changes or set(changes) - {'date', 'description', 'category', 'amount', 'trip_id', 'original_amount', 'currency', 'exchange_rate', 'rate_date', 'rate_source'}:
             raise ValueError('Invalid transaction fields')
         with self.database.connection(write=True) as conn:
             item = self._find(conn, transaction_id)

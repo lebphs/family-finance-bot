@@ -4,6 +4,8 @@ for (const theme of ['light', 'dark'] as const) {
   test(`напоминания: сохранение после перезагрузки и тема ${theme}`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: theme });
     await page.route('https://telegram.org/**', route => route.abort());
+    await page.route('**/api/trips', route => route.fulfill({ json: [] }));
+    await page.route('**/api/travel-mode', route => route.fulfill({ json: { trip: null, currencies: ['BYN', 'EUR'] } }));
     await page.route('**/api/me', route => route.fulfill({ json: { telegram_user_id: 42, display_name: 'Иван', role: 'member' } }));
     await page.route('**/api/categories', route => route.fulfill({ json: [] }));
     await page.route('**/api/home', route => route.fulfill({ json: { month: '2026-10', total: '0', previous_total: '0', change: '0', change_percent: null, categories: [], recent: [] } }));

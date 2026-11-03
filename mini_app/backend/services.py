@@ -16,37 +16,69 @@ from mini_app.backend.schemas import (CreateExpenseRequest, HomeResponse, Catego
 
 
 class ExpenseService:
-    def __init__(self, transactions: TransactionRepository, categories: CategoryRepository):
+    def __init__(self, transactions: TransactionRepository, categories: CategoryRepository, *, trips=None, exchange=None):
         self.transactions = transactions
         self.categories = categories
+        self.trips = trips
+        self.exchange = exchange
 
     async def create(self, request: CreateExpenseRequest, user: CurrentUser) -> TransactionResponse:
         # Namespace the client key by the verified identity; it is never an author ID.
         transaction_id = str(uuid5(NAMESPACE_URL, f"family-finance:{user.telegram_user_id}:{request.request_id}"))
         existing = await self.transactions.get(transaction_id)
         if existing:
-            if (existing.date, existing.description, existing.category, existing.amount, existing.author_id) != (
-                    request.date, request.description, request.category, request.amount, user.telegram_user_id):
+            expected_trip = request.trip_id if 'trip_id' in request.model_fields_set else existing.trip_id
+            expected_currency = request.currency or existing.currency
+            if (existing.date, existing.description, existing.category, existing.original_amount or existing.amount,
+                existing.author_id, existing.trip_id, existing.currency) != (
+                    request.date, request.description, request.category, request.amount,
+                    user.telegram_user_id, expected_trip, expected_currency):
                 raise self.conflict()
             return TransactionResponse.from_domain(existing)
-        if request.category not in {item.name for item in await self.categories.list()}:
-            raise ApiError(code="unknown_category", message="Выберите категорию из списка", status_code=422)
+        trip_id = request.trip_id
+        if self.trips and 'trip_id' not in request.model_fields_set:
+            trip_id = await self.trips.active_id(user.telegram_user_id)
+        trip = await self.resolve_trip(trip_id)
+        currency = request.currency or (trip.currency if trip else 'BYN')
+        await self.validate_category(request.category, trip_id)
+        details = {}
+        if trip_id or currency != 'BYN':
+            if self.exchange is None:
+                raise ApiError(code='currency_unavailable', message='Пересчёт валют недоступен', status_code=503)
+            details = await self.exchange.convert(request.amount, currency, request.date)
+            details['trip_id'] = trip_id
         try:
             transaction = await self.transactions.create(
                 date=request.date, description=request.description, category=request.category,
-                amount=request.amount, author=user, transaction_id=transaction_id,
+                amount=details.pop('amount', request.amount), author=user, transaction_id=transaction_id, **details,
             )
         except TransactionConflictError as error:
             raise self.conflict() from error
         return TransactionResponse.from_domain(transaction)
+
+    async def resolve_trip(self, trip_id):
+        if trip_id is None:
+            return None
+        trip = await self.trips.get(trip_id) if self.trips else None
+        if trip is None:
+            raise ApiError(code='trip_not_found', message='Поездка не найдена', status_code=422)
+        return trip
+
+    async def validate_category(self, category, trip_id):
+        categories = await self.trips.categories() if trip_id and self.trips else await self.categories.list()
+        if category not in {item.name for item in categories}:
+            raise ApiError(code="unknown_category", message="Выберите категорию из списка", status_code=422)
 
     @staticmethod
     def conflict():
         return ApiError(code="request_conflict", message="Этот запрос уже сохранён с другими данными", status_code=409)
 
     async def list(self, filters: TransactionFilters) -> TransactionPage:
+        from mini_app.backend.travel import in_scope
         items = [item for item in await self.transactions.list()
-                 if (not filters.date_from or item.date >= filters.date_from)
+                 if in_scope(item, filters.scope)
+                 and (not filters.trip_id or item.trip_id == filters.trip_id)
+                 and (not filters.date_from or item.date >= filters.date_from)
                  and (not filters.date_to or item.date <= filters.date_to)
                  and (not filters.category or item.category == filters.category)
                  and (filters.author_id is None or item.author_id == filters.author_id)
@@ -90,10 +122,20 @@ class ExpenseService:
         self.require_owner(item, user)
         if transaction_version(item) != request.version:
             raise self.stale()
-        if request.category != item.category and request.category not in {c.name for c in await self.categories.list()}:
-            raise ApiError(code="unknown_category", message="Выберите категорию из списка", status_code=422)
-        changes = {field: getattr(request, field) for field in ("date", "amount", "category", "description")
+        trip_id = request.trip_id if 'trip_id' in request.model_fields_set else item.trip_id
+        await self.resolve_trip(trip_id)
+        if request.category != item.category or trip_id != item.trip_id:
+            await self.validate_category(request.category, trip_id)
+        currency = request.currency or item.currency
+        changes = {field: getattr(request, field) for field in ("date", "category", "description")
                    if getattr(request, field) != getattr(item, field)}
+        if trip_id != item.trip_id:
+            changes['trip_id'] = trip_id
+        if request.amount != (item.original_amount or item.amount) or currency != item.currency or request.date != item.date:
+            if self.exchange and (currency != 'BYN' or item.original_amount is not None or trip_id):
+                changes.update(await self.exchange.convert(request.amount, currency, request.date))
+            else:
+                changes['amount'] = request.amount
         if not changes:
             return TransactionResponse.from_domain(item)
         try:
@@ -114,17 +156,19 @@ class ExpenseService:
         if not deleted:
             raise ApiError(code="transaction_not_found", message="Операция уже удалена", status_code=404)
 
-    async def home(self, today: date | None = None) -> HomeResponse:
+    async def home(self, today: date | None = None, scope='everyday') -> HomeResponse:
         today = today or datetime.now(ZoneInfo("Europe/Minsk")).date()
         start = today.replace(day=1)
         previous = (start - timedelta(days=1)).replace(day=1)
-        transactions = await self.transactions.list()
+        from mini_app.backend.travel import in_scope
+        transactions = [item for item in await self.transactions.list() if in_scope(item, scope)]
         current = [item for item in transactions if (item.date.year, item.date.month) == (start.year, start.month)]
         total = sum((item.amount for item in current), Decimal(0))
         previous_total = sum((item.amount for item in transactions if previous <= item.date < start), Decimal(0))
         by_category: dict[str, Decimal] = {}
         for item in current:
-            by_category[item.category] = by_category.get(item.category, Decimal(0)) + item.amount
+            name = 'Поездки' if scope == 'all' and item.trip_id else item.category
+            by_category[name] = by_category.get(name, Decimal(0)) + item.amount
 
         def recent_key(item):
             created = item.created_at or datetime.min.replace(tzinfo=timezone.utc)

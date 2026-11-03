@@ -1,4 +1,4 @@
-import { ApiClient, Category, ReminderResponse, StatisticsSummary, Transaction } from './api';
+import { ApiClient, Category, ReminderResponse, StatisticsSummary, Transaction, Trip } from './api';
 
 // This transport never calls fetch: all preview reads and writes stay in memory.
 export function createPreviewClient(): ApiClient {
@@ -17,6 +17,11 @@ export function createPreviewClient(): ApiClient {
     { name: 'Связь', subcategories: [] }, { name: 'Подарки', subcategories: [] },
     { name: 'Другое', subcategories: [] },
   ];
+  let trips: Trip[] = [];
+  let activeTrip: string | null = null;
+  const travelCategories: Category[] = ['Проживание', 'Междугородний транспорт', 'Местный транспорт', 'Еда и продукты', 'Экскурсии и развлечения', 'Покупки и сувениры', 'Документы и страховки', 'Связь', 'Прочее'].map(name => ({ name, subcategories: [] }));
+  const demoRates: Record<string, number> = { BYN: 1, EUR: 3.5, USD: 3.1, PLN: .82 };
+  const converted = (amount: string, currency = 'BYN', date: string) => ({ original_amount: amount, currency, exchange_rate: String(demoRates[currency]), rate_date: date, rate_source: 'DEMO', amount: (Number(amount) * demoRates[currency]).toFixed(2) });
   let rows: Transaction[] = [
     ['Продукты', '156.40', 'Покупки на неделю'], ['Дом', '210.00', 'Коммунальные'],
     ['Транспорт', '32.50', 'Такси'], ['Кафе', '48.00', 'Семейный обед'],
@@ -48,7 +53,10 @@ export function createPreviewClient(): ApiClient {
   const requests = new Map<string, Transaction>();
   const sum = (items: Transaction[]) => items.reduce((n, row) => n + Math.round(Number(row.amount) * 100), 0) / 100;
   const money = (n: number) => n.toFixed(2);
-  const grouped = (items: Transaction[]) => categories.map(({ name }) => ({ category: name, amount: money(sum(items.filter(row => row.category === name))) })).filter(row => Number(row.amount) > 0);
+  const grouped = (items: Transaction[], groupTrips = false) => {
+    const name = (row: Transaction) => groupTrips && row.trip_id ? 'Поездки' : row.category;
+    return [...new Set(items.map(name))].map(category => ({ category, amount: money(sum(items.filter(row => name(row) === category))) }));
+  };
   const participants = () => [42, 43].map(id => ({ author_id: id, author_name: id === 42 ? 'Иван' : 'Анна' }));
   const response = (value: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
   const send: typeof fetch = async (input, options) => {
@@ -58,7 +66,10 @@ export function createPreviewClient(): ApiClient {
     const query = url.searchParams;
     const method = options?.method ?? 'GET';
     const body = options?.body ? JSON.parse(String(options.body)) : undefined;
-    const filtered = () => rows.filter(row =>
+    const scope = query.get('scope') ?? (path === 'home' || path === 'statistics' ? 'everyday' : 'all');
+    const inScope = (row: Transaction) => scope === 'all' || (scope === 'everyday' ? !row.trip_id : !!row.trip_id);
+    const filtered = () => rows.filter(row => inScope(row) &&
+      (!query.get('trip_id') || row.trip_id === query.get('trip_id')) &&
       (!query.get('date_from') || row.date >= query.get('date_from')!) &&
       (!query.get('date_to') || row.date <= query.get('date_to')!) &&
       (!query.get('category') || row.category === query.get('category')) &&
@@ -67,22 +78,48 @@ export function createPreviewClient(): ApiClient {
       (!query.get('search') || `${row.description} ${row.category}`.toLowerCase().includes(query.get('search')!.toLowerCase()))
     ).sort((a, b) => b.date.localeCompare(a.date));
     if (path === 'me') return response(user);
-    if (path === 'categories') return response(categories);
+    if (path === 'categories') return response(query.get('travel') === 'true' ? travelCategories : categories);
+    if (path === 'travel-mode') {
+      if (method === 'PUT') activeTrip = body.trip_id;
+      return response({ trip: trips.find(t => t.trip_id === activeTrip && !t.completed) ?? null, currencies: Object.keys(demoRates) });
+    }
+    if (path === 'trips') {
+      if (method === 'POST') {
+        const trip: Trip = { ...body, trip_id: crypto.randomUUID(), created_by: 42, completed: false };
+        trips.unshift(trip); return response(trip, 201);
+      }
+      return response(trips);
+    }
+    if (path.startsWith('trips/')) {
+      const [, id, action] = path.split('/');
+      const trip = trips.find(t => t.trip_id === id);
+      if (!trip) return response({}, 404);
+      if (action === 'report') {
+        const items = rows.filter(r => r.trip_id === id);
+        return response({ trip, total: money(sum(items)), count: items.length, categories: grouped(items), transactions: items,
+          participants: participants().map(p => ({ ...p, amount: money(sum(items.filter(r => r.author_id === p.author_id))) })) });
+      }
+      if (action === 'complete') { trip.completed = true; if (activeTrip === id) activeTrip = null; }
+      if (method === 'PUT') Object.assign(trip, body);
+      return response(trip);
+    }
     if (path === 'reminders') {
       if (method === 'PUT') reminders = { ...body, chat_connected: false };
       return response(reminders);
     }
     if (path === 'home') {
-      const current = rows.filter(row => row.date.startsWith(month));
-      const total = sum(current), previousTotal = sum(rows.filter(row => row.date.startsWith(previousMonth)));
-      return response({ month, total: money(total), previous_total: money(previousTotal), change: money(total - previousTotal), change_percent: previousTotal ? money((total / previousTotal - 1) * 100) : null, categories: grouped(current), recent: current.slice(0, 5) });
+      const current = rows.filter(row => inScope(row) && row.date.startsWith(month));
+      const total = sum(current), previousTotal = sum(rows.filter(row => inScope(row) && row.date.startsWith(previousMonth)));
+      return response({ month, total: money(total), previous_total: money(previousTotal), change: money(total - previousTotal), change_percent: previousTotal ? money((total / previousTotal - 1) * 100) : null, categories: grouped(current, scope === 'all'), recent: current.slice(0, 5) });
     }
     if (path === 'transactions/categories') return response(categories.map(row => row.name));
     if (path === 'transactions/participants') return response(participants());
     if (path === 'transactions') {
       if (method === 'POST') {
         if (requests.has(body.request_id)) return response(requests.get(body.request_id), 201);
-        const row: Transaction = { ...body, transaction_id: crypto.randomUUID(), version: '1', author_id: 42, author_name: 'Иван', created_at: new Date().toISOString(), updated_at: null };
+        const tripId = body.trip_id === undefined ? activeTrip : body.trip_id;
+        const currency = body.currency ?? trips.find(t => t.trip_id === tripId)?.currency ?? 'BYN';
+        const row: Transaction = { ...body, trip_id: tripId, ...converted(body.amount, currency, body.date), transaction_id: crypto.randomUUID(), version: '1', author_id: 42, author_name: 'Иван', created_at: new Date().toISOString(), updated_at: null };
         rows.unshift(row); requests.set(body.request_id, row);
         return response(row, 201);
       }
@@ -94,7 +131,7 @@ export function createPreviewClient(): ApiClient {
       if (!row) return response({}, 404);
       if (method !== 'GET' && (body?.version ?? query.get('version')) !== row.version) return response({}, 409);
       if (method === 'DELETE') { rows = rows.filter(item => item !== row); return response(null, 204); }
-      if (method === 'PATCH') Object.assign(row, body, { version: String(Number(row.version) + 1), updated_at: new Date().toISOString() });
+      if (method === 'PATCH') Object.assign(row, body, converted(body.amount, body.currency ?? row.currency, body.date), { version: String(Number(row.version) + 1), updated_at: new Date().toISOString() });
       return response(row);
     }
     if (path === 'statistics') {
@@ -108,7 +145,7 @@ export function createPreviewClient(): ApiClient {
         if (mode === 'months') date.setMonth(date.getMonth() - (Number(query.get('months') ?? 1) - 1));
         for (let i = 0; i < 120 && date.toLocaleDateString('sv-SE').slice(0, 7) <= end; i++, date.setMonth(date.getMonth() + 1)) months.push(date.toLocaleDateString('sv-SE').slice(0, 7));
       }
-      const family = rows.filter(row => months.includes(row.date.slice(0, 7)));
+      const family = rows.filter(row => inScope(row) && months.includes(row.date.slice(0, 7)));
       const selected = filtered().filter(row => months.includes(row.date.slice(0, 7)));
       const monthly = (items: Transaction[]) => months.map((m, i) => {
         const total = sum(items.filter(row => row.date.startsWith(m)));
@@ -118,10 +155,10 @@ export function createPreviewClient(): ApiClient {
       const totals = monthly(selected);
       const data: StatisticsSummary = {
         mode, months, author_id: query.has('author_id') ? Number(query.get('author_id')) : null, unknown_author: query.get('unknown_author') === 'true',
-        total: money(sum(selected)), family_total: money(sum(family)), count: selected.length, categories: grouped(selected), monthly: totals,
+        total: money(sum(selected)), family_total: money(sum(family)), count: selected.length, categories: grouped(selected, scope === 'all'), monthly: totals,
         available_participants: participants(), participants: participants().map(person => {
           const items = selected.filter(row => row.author_id === person.author_id);
-          return { ...person, total: money(sum(items)), share_percent: sum(selected) ? money(sum(items) / sum(selected) * 100) : null, count: items.length, average: money(items.length ? sum(items) / items.length : 0), categories: grouped(items), monthly: monthly(items) };
+          return { ...person, total: money(sum(items)), share_percent: sum(selected) ? money(sum(items) / sum(selected) * 100) : null, count: items.length, average: money(items.length ? sum(items) / items.length : 0), categories: grouped(items, scope === 'all'), monthly: monthly(items) };
         }),
         comparison: mode === 'compare' ? { month_from: months[0], month_to: months[1], from_total: totals[0].total, to_total: totals[1].total, change: money(Number(totals[1].total) - Number(totals[0].total)), change_percent: Number(totals[0].total) ? money((Number(totals[1].total) / Number(totals[0].total) - 1) * 100) : null } : null,
       };

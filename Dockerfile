@@ -18,6 +18,8 @@ COPY mini_app/backend/ ./mini_app/backend/
 COPY mini_app/__init__.py mini_app/__main__.py ./mini_app/
 COPY config.py ./
 COPY --from=frontend /build/dist ./mini_app/frontend/dist
+# Archives may create private directories; runtime code must be readable by appuser.
+RUN chmod -R a+rX /app/bot /app/mini_app
 USER appuser
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD python -c "import os, urllib.request; port=os.getenv('PORT') or os.getenv('API_PORT', '8000'); urllib.request.urlopen('http://127.0.0.1:' + port + '/health', timeout=3)"

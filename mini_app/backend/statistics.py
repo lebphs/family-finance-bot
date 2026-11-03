@@ -13,6 +13,7 @@ from mini_app.backend.schemas import CategoryTotal, TransactionParticipant
 
 class StatisticsQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    scope: Literal['all', 'everyday', 'travel'] = 'everyday'
     mode: Literal['months', 'range', 'compare'] = 'months'
     months: Literal[1, 2, 3, 6, 12] = 1
     month_from: str | None = None
@@ -126,10 +127,11 @@ def total(items) -> Decimal:
     return sum((item.amount for item in items), Decimal(0))
 
 
-def categories(items) -> list[CategoryTotal]:
+def categories(items, *, group_trips=False) -> list[CategoryTotal]:
     result: dict[str, Decimal] = {}
     for item in items:
-        result[item.category] = result.get(item.category, Decimal(0)) + item.amount
+        name = 'Поездки' if group_trips and item.trip_id else item.category
+        result[name] = result.get(name, Decimal(0)) + item.amount
     return [CategoryTotal(category=name, amount=amount) for name, amount in
             sorted(result.items(), key=lambda pair: (-pair[1], pair[0]))]
 
@@ -157,6 +159,7 @@ class StatisticsService:
     async def get(self, query: StatisticsQuery, today: date | None = None) -> StatisticsResponse:
         today = today or datetime.now(ZoneInfo('Europe/Minsk')).date()
         months = selected_months(query, today)
+        from mini_app.backend.travel import in_scope
         ledger = await self.transactions.list()
         # A single read gives consistent family/participant totals. Latest dated
         # author label wins deterministically when stored names changed over time.
@@ -165,7 +168,8 @@ class StatisticsService:
             names[item.author_id] = item.author_name if item.author_id is not None else 'Автор не указан'
         identifiers = sorted(names, key=lambda identifier: (identifier is None, identifier or 0))
         month_set = set(months)
-        family = [item for item in ledger if f'{item.date.year:04d}-{item.date.month:02d}' in month_set]
+        family = [item for item in ledger if in_scope(item, query.scope)
+                  and f'{item.date.year:04d}-{item.date.month:02d}' in month_set]
         family_total = total(family)
         selected = [item for item in family if
                     (query.author_id is None or item.author_id == query.author_id)
@@ -183,7 +187,7 @@ class StatisticsService:
                 author_id=identifier, author_name=names[identifier], total=amount,
                 share_percent=percentage(amount, family_total), count=len(items),
                 average=(amount / len(items)).quantize(Decimal('0.01')) if items else Decimal(0),
-                categories=categories(items), monthly=monthly(items, months)))
+                categories=categories(items, group_trips=query.scope == 'all'), monthly=monthly(items, months)))
         dynamics = monthly(selected, months)
         comparison = None
         if query.mode == 'compare':
@@ -195,6 +199,6 @@ class StatisticsService:
         return StatisticsResponse(
             mode=query.mode, months=months, author_id=query.author_id, unknown_author=query.unknown_author,
             total=total(selected), family_total=family_total, count=len(selected),
-            categories=categories(selected), monthly=dynamics, participants=participants,
+            categories=categories(selected, group_trips=query.scope == 'all'), monthly=dynamics, participants=participants,
             available_participants=[TransactionParticipant(author_id=identifier, author_name=names[identifier])
                                     for identifier in identifiers], comparison=comparison)

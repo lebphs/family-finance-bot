@@ -6,6 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 import re
 from uuid import UUID
+from typing import Literal
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
@@ -18,6 +19,16 @@ class ExpenseFields(BaseModel):
     amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2, allow_inf_nan=False)
     category: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=500)
+    trip_id: str | None = Field(default=None, min_length=1, max_length=100)
+    currency: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value):
+        from mini_app.backend.travel import CURRENCIES
+        if value is not None and value not in CURRENCIES:
+            raise ValueError("Unsupported currency")
+        return value
 
     @field_validator("date", mode="before")
     @classmethod
@@ -51,6 +62,12 @@ class TransactionResponse(BaseModel):
     transaction_id: str | None
     created_at: datetime | None
     updated_at: datetime | None
+    trip_id: str | None = None
+    original_amount: Decimal | None = None
+    currency: str = "BYN"
+    exchange_rate: Decimal | None = None
+    rate_date: date | None = None
+    rate_source: str | None = None
 
     @classmethod
     def from_domain(cls, transaction: Transaction):
@@ -148,6 +165,8 @@ class TransactionFilters(BaseModel):
     category: str | None = Field(default=None, min_length=1, max_length=100)
     author_id: int | None = Field(default=None, gt=0)
     unknown_author: bool = False
+    trip_id: str | None = Field(default=None, min_length=1, max_length=100)
+    scope: Literal['all', 'everyday', 'travel'] = 'all'
     search: str = Field(default="", max_length=500)
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=20, ge=1, le=100)

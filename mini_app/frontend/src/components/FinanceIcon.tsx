@@ -21,7 +21,7 @@ export function categoryIcon(name: string): IconName {
   const value = name.toLowerCase();
   if (/продукт|магазин|покупк/.test(value)) return 'basket';
   if (/еда|питан|кафе|ресторан/.test(value)) return 'food';
-  if (/дом|жиль|кварт|коммун/.test(value)) return 'house';
+  if (/дом|жиль|прожив|кварт|коммун/.test(value)) return 'house';
   if (/авто|машин|такси|бензин/.test(value)) return 'car';
   if (/транспорт|поезд|путеше|отпуск/.test(value)) return 'travel';
   if (/здоров|мед|аптек/.test(value)) return 'health';

@@ -12,14 +12,20 @@ export interface ReminderResponse extends ReminderSettings { chat_connected: boo
 export interface ManagedUser extends CurrentUser { active: boolean }
 export interface UserInput { telegram_user_id: number; display_name: string; role: 'admin' | 'member'; active: boolean }
 export interface Category { name: string; subcategories: string[] }
-export interface ExpenseInput { request_id: string; date: string; amount: string; category: string; description: string }
+export interface TripInput { name: string; date_from: string; date_to: string; currency: string }
+export interface Trip extends TripInput { trip_id: string; created_by: number; completed: boolean }
+export interface TravelContext { trip: Trip | null; currencies: string[] }
+export interface TripReport { trip: Trip; total: string; count: number; categories: { category: string; amount: string }[]; participants: { author_id: number | null; author_name: string; amount: string }[]; transactions: Transaction[] }
+export type ExpenseScope = 'all' | 'everyday' | 'travel';
+export interface ExpenseInput { trip_id?: string | null; currency?: string; request_id: string; date: string; amount: string; category: string; description: string }
 export interface Transaction {
+  trip_id?: string | null; original_amount?: string | null; currency?: string; exchange_rate?: string | null; rate_date?: string | null; rate_source?: string | null;
   version?: string; transaction_id: string | null; date: string; amount: string; category: string; description: string;
   author_id: number | null; author_name: string; created_at: string | null; updated_at: string | null;
 }
 export interface TransactionPage { items: Transaction[]; total: number; next_offset: number | null }
 export interface Participant { author_id: number | null; author_name: string }
-export interface TransactionFilters { date_from?: string; date_to?: string; category?: string; author_id?: string; unknown_author?: string; search?: string; offset?: string; limit?: string }
+export interface TransactionFilters { scope?: ExpenseScope; trip_id?: string; date_from?: string; date_to?: string; category?: string; author_id?: string; unknown_author?: string; search?: string; offset?: string; limit?: string }
 export type TransactionEdit = Omit<ExpenseInput, "request_id"> & { version: string };
 
 export interface HomeSummary {
@@ -28,6 +34,7 @@ export interface HomeSummary {
 }
 
 export interface StatisticsQuery {
+  scope?: ExpenseScope;
   mode?: 'months' | 'range' | 'compare'; months?: string;
   month_from?: string; month_to?: string; compare_from?: string; compare_to?: string;
   author_id?: string; unknown_author?: string;
@@ -86,7 +93,7 @@ export class ApiClient {
   constructor(private readonly auth: () => AuthContext = browserAuth,
               private readonly send: typeof fetch = (...args) => fetch(...args)) {}
 
-  private async get<T>(path: string, signal?: AbortSignal, body?: ExpenseInput | TransactionEdit | ReminderSettings | UserInput | Partial<ManagedUser>, method = body ? 'POST' : 'GET'): Promise<T> {
+  private async get<T>(path: string, signal?: AbortSignal, body?: object, method = body ? 'POST' : 'GET'): Promise<T> {
     const headers = { ...authHeaders(this.auth()), ...(body ? { 'Content-Type': 'application/json' } : {}) };
     let response: Response;
     try {
@@ -99,6 +106,16 @@ export class ApiClient {
       throw new ApiError(0, 'network_error', 'Не удалось связаться с сервером. Проверьте соединение.');
     }
     if (!response.ok) {
+      const known: Record<string, string> = {
+        rate_unavailable: 'Не удалось получить курс. Данные сохранены в форме — повторите отправку.',
+        currency_unavailable: 'Нет курса для этой валюты на выбранную дату. Выберите другую валюту.',
+        future_rate: 'Курс на будущую дату ещё неизвестен.',
+        trip_completed: 'Поездка завершена. Добавьте расход через её карточку.',
+        trip_not_found: 'Поездка не найдена.',
+      };
+      let code = '';
+      try { code = (await response.json()).error?.code ?? ''; } catch { /* untrusted proxy response */ }
+      if (known[code]) throw new ApiError(response.status, code, known[code]);
       // Do not display arbitrary server/proxy text or log response bodies/authentication data.
       throw new ApiError(response.status, response.status === 401 || response.status === 403
         ? 'access_denied' : 'request_failed', response.status === 401 || response.status === 403
@@ -126,9 +143,16 @@ export class ApiClient {
   updateUser(id: number, input: Partial<ManagedUser>): Promise<ManagedUser> {
     return this.get(`admin/users/${id}`, undefined, input, 'PATCH');
   }
+  trips(signal?: AbortSignal): Promise<Trip[]> { return this.get('trips', signal); }
+  createTrip(input: TripInput): Promise<Trip> { return this.get('trips', undefined, input); }
+  updateTrip(id: string, input: TripInput): Promise<Trip> { return this.get(`trips/${encodeURIComponent(id)}`, undefined, input, 'PUT'); }
+  completeTrip(id: string): Promise<Trip> { return this.get(`trips/${encodeURIComponent(id)}/complete`, undefined, undefined, 'POST'); }
+  tripReport(id: string, signal?: AbortSignal): Promise<TripReport> { return this.get(`trips/${encodeURIComponent(id)}/report`, signal); }
+  travelContext(signal?: AbortSignal): Promise<TravelContext> { return this.get('travel-mode', signal); }
+  setTravelMode(trip_id: string | null): Promise<TravelContext> { return this.get('travel-mode', undefined, { trip_id }, 'PUT'); }
   me(signal?: AbortSignal): Promise<CurrentUser> { return this.get('me', signal); }
-  categories(signal?: AbortSignal): Promise<Category[]> { return this.get('categories', signal); }
-  home(signal?: AbortSignal): Promise<HomeSummary> { return this.get('home', signal); }
+  categories(signal?: AbortSignal, travel = false): Promise<Category[]> { return this.get(travel ? 'categories?travel=true' : 'categories', signal); }
+  home(signal?: AbortSignal, scope: ExpenseScope = 'everyday'): Promise<HomeSummary> { return this.get(scope === 'everyday' ? 'home' : `home?scope=${scope}`, signal); }
   transactions(filters: TransactionFilters = {}, signal?: AbortSignal): Promise<TransactionPage> {
     return this.get(`transactions?${new URLSearchParams(filters as Record<string, string>)}`, signal);
   }

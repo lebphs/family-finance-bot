@@ -76,6 +76,7 @@ export function Statistics({ client, onDenied }: { client: ApiClient; onDenied: 
   }
 
   return <div className="statistics">
+    <p className="overview-hint">Статистика обычных расходов. Отчёты путешествий доступны во вкладке «Поездки».</p>
     <div className="filter-toolbar"><button className="secondary-button filter-toggle" type="button" aria-expanded={filtersOpen} aria-controls="statistics-filters" onClick={() => setFiltersOpen(open => !open)}>Фильтры</button></div>
     <section id="statistics-filters" hidden={!filtersOpen} className="home-card" aria-labelledby="statistics-filter-title">
       <h2 id="statistics-filter-title">Период и участник</h2>

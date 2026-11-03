@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { ApiClient, ApiError, Category, ExpenseInput, HomeSummary } from '../api';
+import { ApiClient, ApiError, Category, ExpenseInput, HomeSummary, Trip } from '../api';
 import { StatusScreen } from './StatusScreen';
 import { ExpenseWheel } from './ExpenseWheel';
 import { categoryIcon, FinanceIcon } from './FinanceIcon';
@@ -13,7 +13,15 @@ export function validDate(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-export function Home({ refresh = 0, client, onDenied }: { refresh?: number; client: ApiClient; onDenied: () => void; onTransactions: () => void }) {
+export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsumed }: { refresh?: number; client: ApiClient; onDenied: () => void; onTransactions: () => void; requestedTrip?: Trip | null; onTripConsumed?: () => void }) {
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [tripId, setTripId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [currency, setCurrency] = useState('BYN');
+  const [currencies, setCurrencies] = useState<string[]>(['BYN', 'EUR', 'USD']);
+  const [contextReady, setContextReady] = useState(false);
+  const [contextError, setContextError] = useState('');
+  const [contextAttempt, setContextAttempt] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoriesReady, setCategoriesReady] = useState(false);
   const [categoryError, setCategoryError] = useState('');
@@ -31,6 +39,8 @@ export function Home({ refresh = 0, client, onDenied }: { refresh?: number; clie
   const editor = useRef<HTMLElement>(null);
   const amountInput = useRef<HTMLInputElement>(null);
   const busy = useRef(false);
+  const explicitTrip = useRef(false);
+  const lastActiveId = useRef<string | null>(null);
   useEffect(() => {
     if (!formOpen) return;
     const previous = document.activeElement as HTMLElement | null;
@@ -39,6 +49,11 @@ export function Home({ refresh = 0, client, onDenied }: { refresh?: number; clie
     amountInput.current?.focus();
     return () => { document.body.style.overflow = overflow; if (previous?.isConnected) previous.focus(); };
   }, [formOpen]);
+  function selectTrip(identifier: string | null) {
+    explicitTrip.current = true;
+    setTripId(identifier); setCurrency(trips.find(t => t.trip_id === identifier)?.currency ?? 'BYN');
+    setCategory(''); setDescription(''); setCategoriesReady(false);
+  }
   function openExpense(name = category) {
     if (name !== category) { setCategory(name); setDescription(''); }
     if (!uncertain) { setSuccess(''); setError(''); }
@@ -63,9 +78,39 @@ export function Home({ refresh = 0, client, onDenied }: { refresh?: number; clie
 
   useEffect(() => {
     const controller = new AbortController();
+    setContextError('');
+    Promise.all([client.trips(controller.signal), client.travelContext(controller.signal)]).then(([items, context]) => {
+      if (controller.signal.aborted) return;
+      const nextActive = context.trip?.trip_id ?? null;
+      if (nextActive !== lastActiveId.current && !pending.current && !requestedTrip) explicitTrip.current = false;
+      lastActiveId.current = nextActive;
+      setTrips(items); setCurrencies(context.currencies); setActiveId(nextActive);
+      if (!pending.current && !explicitTrip.current && !requestedTrip) {
+        setTripId(context.trip?.trip_id ?? null); setCurrency(context.trip?.currency ?? 'BYN'); setCategory('');
+      }
+      setContextReady(true);
+    }).catch(err => {
+      if (controller.signal.aborted) return;
+      if (err instanceof ApiError && err.accessDenied) deny.current();
+      else setContextError('Не удалось загрузить режим поездки. Повторите загрузку перед сохранением.');
+    });
+    return () => controller.abort();
+  }, [client, refresh, contextAttempt]);
+
+  useEffect(() => {
+    if (!requestedTrip) return;
+    if (pending.current) { setError('Сначала завершите сохранение текущего расхода.'); onTripConsumed?.(); return; }
+    explicitTrip.current = true;
+    setTripId(requestedTrip.trip_id); setCurrency(requestedTrip.currency); setCategory(''); setDescription('');
+    setFormOpen(true); onTripConsumed?.();
+  }, [requestedTrip]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     const version = ++summaryVersion.current;
     setCategoryError(''); setSummaryError('');
-    client.categories(controller.signal).then((items) => {
+    setCategoriesReady(false);
+    client.categories(controller.signal, !!tripId).then((items) => {
       if (!controller.signal.aborted) { setCategories(items); setCategoriesReady(true); }
     }).catch((err: unknown) => {
       if (controller.signal.aborted) return;
@@ -80,7 +125,7 @@ export function Home({ refresh = 0, client, onDenied }: { refresh?: number; clie
       else setSummaryError('Не удалось загрузить сводку.');
     });
     return () => controller.abort();
-  }, [client, attempt, refresh]);
+  }, [client, attempt, refresh, tripId]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -92,13 +137,19 @@ export function Home({ refresh = 0, client, onDenied }: { refresh?: number; clie
       }
       if (!categories.some((item) => item.name === category)) { setError('Выберите категорию из списка.'); return; }
       if (!validDate(date)) { setError('Укажите дату в формате ГГГГ-ММ-ДД.'); return; }
-      pending.current = { request_id: crypto.randomUUID(), amount: normalized, category, description: description.trim(), date };
+      if (!contextReady || contextError) { setError('Сначала загрузите режим поездки.'); return; }
+      pending.current = { request_id: crypto.randomUUID(), amount: normalized, category, description: description.trim(), date,
+        trip_id: tripId, currency };
     }
     busy.current = true; setSaving(true); setError(''); setSuccess('');
     try {
       await client.createExpense(pending.current);
       pending.current = null; setUncertain(false);
       setAmount(''); setDescription(''); setDate(todayInMinsk());
+      // One-off overrides must not leak into the next everyday purchase.
+      explicitTrip.current = false;
+      if (tripId !== activeId) { setCategory(''); setCategoriesReady(false); }
+      setTripId(activeId); setCurrency(trips.find(t => t.trip_id === activeId)?.currency ?? 'BYN');
       setSuccess('Расход сохранён.'); setFormOpen(false);
       // Read failure must never turn a successful write into a failed save.
       setSummary(null); setSummaryError('');
@@ -125,10 +176,18 @@ export function Home({ refresh = 0, client, onDenied }: { refresh?: number; clie
 
   const selected = categories.find((item) => item.name === category);
   return <div className="home">
+    <section className="home-card" inert={formOpen} aria-label="Режим расходов">
+      <p>{tripId ? `Поездка: ${trips.find(t => t.trip_id === tripId)?.name ?? requestedTrip?.name ?? ''} · ${currency}` : 'Обычные расходы · BYN'}</p>
+      <label>Расходы для<select disabled={saving || uncertain || !contextReady} value={tripId ?? ''} onChange={e => selectTrip(e.target.value || null)}>
+        <option value="">Обычная жизнь</option>{trips.map(t => <option value={t.trip_id} key={t.trip_id}>{t.name}{t.completed ? ' · завершена' : ''}</option>)}
+      </select></label>
+      {activeId && !tripId && <button className="secondary-button" onClick={() => selectTrip(activeId)}>Вернуться к активной поездке</button>}
+      {contextError && <p role="alert">{contextError}<button onClick={() => setContextAttempt(n => n + 1)}>Повторить загрузку режима</button></p>}
+    </section>
     <section className="overview" aria-labelledby="overview-title" inert={formOpen}>
       <div className="month-heading"><span aria-hidden="true">—</span><h2 id="overview-title">{summary ? new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${summary.month}-01T00:00:00Z`)) : 'Текущий месяц'}</h2><span aria-hidden="true">—</span></div>
       <p className="overview-hint">Нажмите на категорию, чтобы добавить расход</p>
-      <ExpenseWheel categories={categories} summary={summary} disabled={saving || uncertain} onCategory={openExpense} />
+      <ExpenseWheel categories={categories} summary={summary} disabled={saving || uncertain || !contextReady || !!contextError || !categoriesReady} onCategory={openExpense} />
       {uncertain && <button className="secondary-button" onClick={() => openExpense()}>Продолжить сохранение</button>}
       {success && <p className="save-success" role="status">{success}</p>}
 
@@ -150,7 +209,9 @@ export function Home({ refresh = 0, client, onDenied }: { refresh?: number; clie
       <header className="editor-header"><button type="button" disabled={saving} onClick={() => setFormOpen(false)}>Отменить</button><h2 id="expense-title">Новый расход</h2><FinanceIcon name={categoryIcon(category)} /></header>
       <form onSubmit={submit} noValidate>
         <fieldset disabled={saving || uncertain}>
-          <label className="amount-field">Сумма, BYN<input ref={amountInput} inputMode="none" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" required /></label>
+          <label>Поездка расхода<select value={tripId ?? ''} onChange={e => selectTrip(e.target.value || null)}><option value="">Обычный расход</option>{trips.map(t => <option value={t.trip_id} key={t.trip_id}>{t.name}</option>)}</select></label>
+          <label>Валюта расхода<select value={currency} onChange={e => setCurrency(e.target.value)}>{currencies.map(c => <option key={c}>{c}</option>)}</select></label>
+          <label className="amount-field">Сумма, {currency}<input ref={amountInput} inputMode="none" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" required /></label>
           <label className={selected?.subcategories.length ? undefined : "editor-category-wide"}>Категория<select aria-label="Категория" value={category} onChange={(e) => { setCategory(e.target.value); setDescription(''); }} required>
             <option value="">Выберите категорию</option>
             {categories.map((item) => <option key={item.name}>{item.name}</option>)}
@@ -166,7 +227,7 @@ export function Home({ refresh = 0, client, onDenied }: { refresh?: number; clie
 
         <div className="numeric-keypad" aria-label="Цифровая клавиатура">{['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫'].map((key) => <button type="button" key={key} disabled={saving || uncertain} aria-label={key === '⌫' ? 'Удалить последнюю цифру' : key === ',' ? 'Десятичная запятая' : key} onClick={() => keypad(key)}>{key}</button>)}</div>
         <button className="clear-amount" type="button" disabled={saving || uncertain} onClick={() => keypad('C')}>Очистить сумму</button>
-        <button className="primary-button" disabled={saving || (!uncertain && (!categoriesReady || categories.length === 0))} type="submit">{saving ? 'Сохраняем…' : uncertain ? 'Повторить сохранение' : 'Сохранить расход'}</button>
+        <button className="primary-button" disabled={saving || (!uncertain && (!categoriesReady || !contextReady || !!contextError || categories.length === 0))} type="submit">{saving ? 'Сохраняем…' : uncertain ? 'Повторить сохранение' : 'Сохранить расход'}</button>
       </form>
     </section>}
 

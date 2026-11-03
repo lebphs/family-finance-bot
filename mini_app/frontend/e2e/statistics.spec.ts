@@ -11,6 +11,8 @@ for (const theme of ['light', 'dark'] as const) {
     await page.route('**/api/**', async (route) => {
       const request = route.request(); const url = new URL(request.url());
       expect(request.headers()['x-dev-telegram-user-id']).toBe('42');
+      if (url.pathname === '/api/trips') return route.fulfill({ json: [] });
+      if (url.pathname === '/api/travel-mode') return route.fulfill({ json: { trip: null, currencies: ['BYN', 'EUR', 'USD'] } });
       if (url.pathname === '/api/me') return route.fulfill({ json: { telegram_user_id: 42, display_name: 'Иван', role: 'member' } });
       if (url.pathname === '/api/categories') return route.fulfill({ json: [] });
       if (url.pathname === '/api/home') return route.fulfill({ json: { month: '2026-10', total: '0', previous_total: '0', change: '0', change_percent: null, categories: [], recent: [] } });

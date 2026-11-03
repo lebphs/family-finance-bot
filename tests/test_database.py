@@ -183,7 +183,7 @@ class DatabaseTests(unittest.IsolatedAsyncioTestCase):
         await self.sync(book).tick(now + timedelta(hours=1))
         self.assertEqual(len(book.batches), 1)
         requests = book.batches[0]['requests']
-        self.assertEqual(len(requests), 3)
+        self.assertEqual(len(requests), 5)
         self.assertTrue(all(request['updateCells']['range']['sheetId'] > 2 for request in requests))
         values = requests[0]['updateCells']['rows'][1]['values']
         self.assertEqual(values[1]['userEnteredValue'], {'stringValue': '=literal'})

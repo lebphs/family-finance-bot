@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/categories?travel=true', route => route.fulfill({ json: [] }));
+  await page.route('**/api/trips', route => route.fulfill({ json: [] }));
+  await page.route('**/api/travel-mode', route => route.fulfill({ json: { trip: null, currencies: ['BYN', 'EUR', 'USD'] } }));
+});
+
 for (const theme of ['light', 'dark'] as const) {
   test(`главная: мобильное сохранение и обновление, ${theme}`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: theme });

@@ -29,6 +29,8 @@ class AsyncSchedulerBot:
         self.dp.message.register(self.connect_chat, Command("start", "register"))
         self.dp.message.register(self.subscribe_chat, Command("subscribe"))
         self.dp.message.register(self.unsubscribe_chat, Command("unsubscribe"))
+        from bot.handlers.trips import register_trips
+        register_trips(self.dp)
         register_user(self.dp)
         register_expenses(self.dp)
         self.dp.errors.register(self.handle_error)

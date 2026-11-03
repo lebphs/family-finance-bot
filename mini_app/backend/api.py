@@ -15,6 +15,8 @@ from mini_app.backend.models import CurrentUser, User
 from mini_app.backend.repositories import UserRepository, CategoryRepository, TransactionRepository
 from mini_app.backend.database import SQLiteUserRepository, SQLiteCategoryRepository, SQLiteTransactionRepository
 from mini_app.backend.runtime import BotRuntime
+from mini_app.backend.travel import TripInput, TravelModeInput, TripRepository, TravelService, Scope
+from mini_app.backend.exchange import ExchangeService
 from mini_app.backend.schemas import (
     CreateUserRequest,
     CurrentUserResponse,
@@ -43,6 +45,7 @@ def create_app(
     user_repository: UserRepository | None = None,
     category_repository: CategoryRepository | None = None,
     transaction_repository: TransactionRepository | None = None,
+    exchange_service=None,
 ) -> FastAPI:
     """Build the app without contacting Telegram or Google Sheets."""
 
@@ -82,7 +85,13 @@ def create_app(
     users = UserService(user_store)
     categories = category_repository or SQLiteCategoryRepository(settings)
     app.state.transaction_repository = transaction_repository or SQLiteTransactionRepository(settings)
-    expenses = ExpenseService(app.state.transaction_repository, categories)
+    trips = TripRepository(settings)
+    travel = TravelService(trips, app.state.transaction_repository)
+    # Legacy Sheets adapters do not store trip/currency metadata. Keep their
+    # existing expense path independent of local SQLite state (also in tests).
+    expense_trips = trips if isinstance(app.state.transaction_repository, SQLiteTransactionRepository) else None
+    expenses = ExpenseService(app.state.transaction_repository, categories, trips=expense_trips,
+                              exchange=exchange_service or ExchangeService(settings))
     init_data_verifier = TelegramInitDataVerifier(
         settings.bot_token,
         max_age_seconds=settings.telegram_auth_max_age_seconds,
@@ -200,9 +209,38 @@ def create_app(
         return await reminders.update(user, request)
 
     @app.get("/api/categories", tags=["categories"])
-    async def list_categories(_user: Annotated[CurrentUser, Depends(current_user)]):
+    async def list_categories(_user: Annotated[CurrentUser, Depends(current_user)], travel: bool = False):
         return [{"name": item.name, "subcategories": list(item.subcategories)}
-                for item in await categories.list()]
+                for item in (await trips.categories() if travel else await categories.list())]
+
+    @app.get("/api/travel-mode", tags=["trips"])
+    async def get_travel_mode(user: Annotated[CurrentUser, Depends(current_user)]):
+        return await travel.context(user.telegram_user_id)
+
+    @app.put("/api/travel-mode", tags=["trips"])
+    async def set_travel_mode(request: TravelModeInput, user: Annotated[CurrentUser, Depends(current_user)]):
+        await trips.set_active(user.telegram_user_id, request.trip_id)
+        return await travel.context(user.telegram_user_id)
+
+    @app.get("/api/trips", tags=["trips"])
+    async def list_trips(_user: Annotated[CurrentUser, Depends(current_user)]):
+        return await trips.list()
+
+    @app.post("/api/trips", status_code=201, tags=["trips"])
+    async def create_trip(request: TripInput, user: Annotated[CurrentUser, Depends(current_user)]):
+        return await trips.save(request, user)
+
+    @app.put("/api/trips/{trip_id}", tags=["trips"])
+    async def edit_trip(trip_id: str, request: TripInput, user: Annotated[CurrentUser, Depends(current_user)]):
+        return await trips.save(request, user, trip_id)
+
+    @app.post("/api/trips/{trip_id}/complete", tags=["trips"])
+    async def complete_trip(trip_id: str, user: Annotated[CurrentUser, Depends(current_user)]):
+        return await trips.save(None, user, trip_id, complete=True)
+
+    @app.get("/api/trips/{trip_id}/report", tags=["trips"])
+    async def trip_report(trip_id: str, _user: Annotated[CurrentUser, Depends(current_user)]):
+        return await travel.report(trip_id)
 
     @app.post("/api/transactions", response_model=TransactionResponse, status_code=201, tags=["transactions"])
     async def create_expense(
@@ -249,8 +287,8 @@ def create_app(
         return await StatisticsService(app.state.transaction_repository).get(query)
 
     @app.get("/api/home", response_model=HomeResponse, tags=["home"])
-    async def get_home(_user: Annotated[CurrentUser, Depends(current_user)]) -> HomeResponse:
-        return await expenses.home()
+    async def get_home(_user: Annotated[CurrentUser, Depends(current_user)], scope: Scope = 'everyday') -> HomeResponse:
+        return await expenses.home(scope=scope)
 
     @app.exception_handler(RepositoryError)
     async def handle_repository_error(_request: Request, error: RepositoryError):

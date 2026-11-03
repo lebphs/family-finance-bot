@@ -18,6 +18,8 @@ describe('этап 7: статистика', () => {
     render(<Statistics {...setup()} />);
     expect(screen.getByText('Загружаем статистику')).toBeInTheDocument();
     expect(await screen.findByRole('region', { name: 'Расходы по месяцам и участникам' })).toBeInTheDocument();
+    expect(screen.getByText(/Статистика обычных расходов/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Тип расходов')).not.toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Диаграмма категорий' })).toHaveTextContent('109,90 BYN');
     expect(screen.queryByRole('region', { name: 'Вся семья' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Суммы по месяцам'));

@@ -1,12 +1,12 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { ApiClient, ApiError, Category, CurrentUser, Participant, Transaction, TransactionFilters, TransactionPage } from '../api';
+import { ApiClient, ApiError, Category, CurrentUser, Participant, Transaction, TransactionFilters, TransactionPage, Trip, ExpenseScope } from '../api';
 import { validDate } from './Home';
 import { PullToRefresh } from './PullToRefresh';
 import { FinanceIcon, categoryIcon } from './FinanceIcon';
 import { StatusScreen } from './StatusScreen';
 
 const money = (value: string) => `${Number(value).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} BYN`;
-const emptyFilters = { from: '', to: '', category: '', author: '', search: '' };
+const emptyFilters = { from: '', to: '', category: '', author: '', search: '', scope: 'all' as ExpenseScope, trip: '' };
 
 function recentMonthFilters() {
   const today = new Date();
@@ -19,6 +19,9 @@ function recentMonthFilters() {
 export function Transactions({ client, user, onDenied, onChanged }: {
   client: ApiClient; user: CurrentUser; onDenied: () => void; onChanged: () => void;
 }) {
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [travelCategories, setTravelCategories] = useState<Category[]>([]);
+  const [currencies, setCurrencies] = useState(['BYN', 'EUR', 'USD']);
   const [categories, setCategories] = useState<Category[]>([]);
   const [ledgerCategories, setLedgerCategories] = useState<string[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -33,7 +36,7 @@ export function Transactions({ client, user, onDenied, onChanged }: {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [form, setForm] = useState({ date: '', amount: '', category: '', description: '' });
+  const [form, setForm] = useState({ date: '', amount: '', category: '', description: '', currency: 'BYN', trip_id: null as string | null });
   const [operationError, setOperationError] = useState('');
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -80,13 +83,25 @@ export function Transactions({ client, user, onDenied, onChanged }: {
     return () => controller.abort();
   }, [client, attempt]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    Promise.all([client.trips(controller.signal), client.categories(controller.signal, true), client.travelContext(controller.signal)]).then(([items, cats, context]) => {
+      if (!controller.signal.aborted) { setTrips(items); setTravelCategories(cats); setCurrencies(context.currencies); }
+    }).catch(err => {
+      if (controller.signal.aborted) return;
+      if (err instanceof ApiError && err.accessDenied) deny.current();
+      else setOptionsError('Не удалось загрузить поездки и валюты. Повторите загрузку.');
+    });
+    return () => controller.abort();
+  }, [client, attempt]);
+
   function apply(event: FormEvent) {
     event.preventDefault();
     if ((draft.from && !validDate(draft.from)) || (draft.to && !validDate(draft.to)) || (draft.from && draft.to && draft.from > draft.to)) {
       setError('Укажите корректный период: начало не позже окончания.'); return;
     }
     setFiltersOpen(false); setSelected(null); setNotice('');
-    setFilters({ ...(draft.from ? { date_from: draft.from } : {}), ...(draft.to ? { date_to: draft.to } : {}),
+    setFilters({ ...(draft.scope !== 'all' ? { scope: draft.scope } : {}), ...(draft.trip ? { trip_id: draft.trip } : {}), ...(draft.from ? { date_from: draft.from } : {}), ...(draft.to ? { date_to: draft.to } : {}),
       ...(draft.category ? { category: draft.category } : {}), ...(draft.author === 'unknown' ? { unknown_author: 'true' }
         : draft.author ? { author_id: draft.author } : {}), ...(draft.search.trim() ? { search: draft.search.trim() } : {}) });
   }
@@ -107,7 +122,7 @@ export function Transactions({ client, user, onDenied, onChanged }: {
 
   function choose(item: Transaction) {
     setSelected(item); setConfirmDelete(false); setOperationError(''); setStale(false); setNotice('');
-    setForm({ date: item.date, amount: item.amount, category: item.category, description: item.description });
+    setForm({ date: item.date, amount: item.original_amount ?? item.amount, category: item.category, description: item.description, currency: item.currency ?? 'BYN', trip_id: item.trip_id ?? null });
   }
 
   async function reloadSelected() {
@@ -130,7 +145,7 @@ export function Transactions({ client, user, onDenied, onChanged }: {
         || !(user.role === 'admin' || selected.author_id === user.telegram_user_id)) return;
     const amount = form.amount.trim().replace(',', '.');
     if (kind === 'edit' && (!validDate(form.date) || !/^\d{1,10}(?:\.\d{1,2})?$/.test(amount) || Number(amount) <= 0
-      || (!categories.some((c) => c.name === form.category) && form.category !== selected.category))) {
+      || (!expenseCategories.some((c) => c.name === form.category) && form.category !== selected.category))) {
       setOperationError('Проверьте положительную сумму, категорию и дату.'); return;
     }
     lock.current = true; setBusy(true); setOperationError('');
@@ -152,7 +167,8 @@ export function Transactions({ client, user, onDenied, onChanged }: {
   }
 
   const canManage = !!selected?.transaction_id && !!selected.version && (user.role === 'admin' || selected.author_id === user.telegram_user_id);
-  const selectedCategory = categories.find((c) => c.name === form.category);
+  const expenseCategories = form.trip_id ? travelCategories : categories;
+  const selectedCategory = expenseCategories.find((c) => c.name === form.category);
   const filterCategories = Array.from(new Set([...ledgerCategories, ...categories.map((c) => c.name), ...(page?.items.map((t) => t.category) ?? []), draft.category].filter(Boolean)));
   function refreshList() {
     if (lock.current || busy || loading || selected) return;
@@ -164,6 +180,8 @@ export function Transactions({ client, user, onDenied, onChanged }: {
     <section id="transaction-filters" hidden={!filtersOpen} className="home-card" aria-label="Фильтры транзакций">
       <form onSubmit={apply}>
         <fieldset disabled={busy || loading}>
+          <label>Тип расходов<select value={draft.scope} onChange={e => setDraft({ ...draft, scope: e.target.value as ExpenseScope })}><option value="all">Все расходы</option><option value="everyday">Обычная жизнь</option><option value="travel">Поездки</option></select></label>
+          <label>Поездка фильтра<select value={draft.trip} onChange={e => setDraft({ ...draft, trip: e.target.value, scope: e.target.value ? 'travel' : draft.scope })}><option value="">Все поездки</option>{trips.map(t => <option value={t.trip_id} key={t.trip_id}>{t.name}</option>)}</select></label>
           <label>Период с<input type="date" value={draft.from} onChange={(e) => setDraft({ ...draft, from: e.target.value })} /></label>
           <label>Период по<input type="date" value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} /></label>
           <label>Категория фильтра<select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}><option value="">Все категории</option>{filterCategories.map((c) => <option key={c}>{c}</option>)}</select></label>
@@ -182,7 +200,7 @@ export function Transactions({ client, user, onDenied, onChanged }: {
       <h2>Найдено операций: {page.total}</h2>
       {!page.items.length ? <p>По выбранным условиям операций нет.</p> : <ul className="recent-list">
         {page.items.map((item, index) => <li key={item.transaction_id ?? `legacy-${index}`}>
-          <button className="transaction-button" disabled={busy} onClick={() => choose(item)}><strong>{item.category} · {money(item.amount)}</strong><span>{item.description || 'Без описания'}</span><span className="transaction-meta">{item.date.split('-').reverse().join('.')} · {item.author_name}</span></button>
+          <button className="transaction-button" disabled={busy} onClick={() => choose(item)}><strong>{item.category} · {money(item.amount)}</strong><span>{item.description || 'Без описания'}</span><span>{item.currency && item.currency !== 'BYN' ? `${item.original_amount} ${item.currency} · ` : ''}{trips.find(t => t.trip_id === item.trip_id)?.name}</span><span className="transaction-meta">{item.date.split('-').reverse().join('.')} · {item.author_name}</span></button>
         </li>)}
       </ul>}
       {page.next_offset !== null && <button className="secondary-button" disabled={loading || busy} onClick={() => void more()}>Загрузить ещё</button>}
@@ -202,9 +220,11 @@ export function Transactions({ client, user, onDenied, onChanged }: {
       <form onSubmit={event => void mutate('edit', event)} noValidate>
         <p className="transaction-meta">{selected.author_name} · {selected.date.split('-').reverse().join('.')}</p>
         <fieldset disabled={busy || stale || !canManage}>
+          <label>Поездка операции<select value={form.trip_id ?? ''} onChange={e => setForm({ ...form, trip_id: e.target.value || null, category: '' })}><option value="">Обычный расход</option>{trips.map(t => <option value={t.trip_id} key={t.trip_id}>{t.name}</option>)}</select></label>
+          <label>Валюта операции<select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>{currencies.map(c => <option key={c}>{c}</option>)}</select></label>
           <label className="editor-date">Дата операции<input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></label>
-          <label className="amount-field">Сумма операции, BYN<input ref={amountInput} inputMode="none" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></label>
-          <label className={selectedCategory?.subcategories.length ? undefined : 'editor-category-wide'}>Категория операции<select value={form.category} onChange={e => setForm({ ...form, category: e.target.value, description: '' })}>{!categories.some(c => c.name === selected.category) && <option>{selected.category}</option>}{categories.map(c => <option key={c.name}>{c.name}</option>)}</select></label>
+          <label className="amount-field">Сумма операции, {form.currency}<input ref={amountInput} inputMode="none" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></label>
+          <label className={selectedCategory?.subcategories.length ? undefined : 'editor-category-wide'}>Категория операции<select value={form.category} onChange={e => setForm({ ...form, category: e.target.value, description: '' })}>{!expenseCategories.some(c => c.name === selected.category) && <option>{selected.category}</option>}{expenseCategories.map(c => <option key={c.name}>{c.name}</option>)}</select></label>
           {!!selectedCategory?.subcategories.length && <label>Подкатегория операции<select value={selectedCategory.subcategories.includes(form.description) ? form.description : ''} onChange={e => setForm({ ...form, description: e.target.value })}><option value="">Не выбрана</option>{selectedCategory.subcategories.map(s => <option key={s}>{s}</option>)}</select></label>}
           <label className="editor-note">Описание операции<input maxLength={500} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Добавить заметку" /></label>
         </fieldset>

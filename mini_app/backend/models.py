@@ -64,3 +64,20 @@ class Transaction:
     transaction_id: str | None = None
     created_at: "datetime | None" = None
     updated_at: "datetime | None" = None
+    trip_id: str | None = None
+    original_amount: Decimal | None = None
+    currency: str = "BYN"
+    exchange_rate: Decimal | None = None
+    rate_date: date | None = None
+    rate_source: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Trip:
+    trip_id: str
+    name: str
+    date_from: date
+    date_to: date
+    currency: str
+    created_by: int
+    completed: bool = False

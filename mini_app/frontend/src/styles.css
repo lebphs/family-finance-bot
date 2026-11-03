@@ -32,7 +32,7 @@ p { line-height: 1.6; overflow-wrap: anywhere; }
 .status-symbol { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 18px; border: 1px solid var(--border); color: var(--app-accent); font-size: 2rem; margin: 0 auto 20px; }
 .status-loading .status-symbol { animation: spin 1.4s linear infinite; }
 .primary-button { min-height: 48px; padding: 12px 24px; border: 0; border-radius: 14px; background: var(--app-accent); color: var(--app-accent-text); font-weight: 600; margin-top: 24px; }
-.bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 760px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 8px calc(8px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(8px + var(--safe-left)); background: var(--app-surface); border-top: 1px solid var(--border); z-index: 2; }
+.bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 760px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 8px calc(8px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(8px + var(--safe-left)); background: var(--app-surface); border-top: 1px solid var(--border); z-index: 2; }
 .bottom-nav button { min-height: 60px; min-width: 0; border: 0; border-radius: 12px; background: transparent; color: var(--app-hint); display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; font-size: clamp(.65rem, 2.8vw, .8rem); }
 .bottom-nav button[aria-current='page'] { color: var(--app-accent); background: var(--app-bg); font-weight: 700; }
 .nav-icon { font-size: 1.6rem; line-height: 1; }

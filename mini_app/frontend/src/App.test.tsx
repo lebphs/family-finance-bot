@@ -7,6 +7,8 @@ import { ApiClient, ApiError } from './api';
 const user = { telegram_user_id: 42, display_name: 'Иван', role: 'member' as const };
 function client() {
   const api = new ApiClient();
+  vi.spyOn(api, 'trips').mockResolvedValue([]);
+  vi.spyOn(api, 'travelContext').mockResolvedValue({ trip: null, currencies: ['BYN', 'EUR'] });
   vi.spyOn(api, 'statistics').mockResolvedValue(emptyStatistics);
   vi.spyOn(api, 'reminders').mockResolvedValue({ reminder_enabled: false, reminder_time: '22:00', reminder_days: [0,1,2,3,4,5,6], timezone: 'Europe/Minsk', chat_connected: false });
   vi.spyOn(api, 'me').mockResolvedValue(user);
@@ -46,16 +48,17 @@ describe('каркас Mini App', () => {
     expect(api.me).toHaveBeenCalledTimes(2);
   });
 
-  it('переключает все четыре раздела и показывает пустое состояние без выдуманных операций', async () => {
+  it('переключает все пять разделов и показывает пустое состояние без выдуманных операций', async () => {
     render(<App client={client()} />);
     const nav = await screen.findByRole('navigation', { name: 'Основная навигация' });
-    expect(nav.querySelectorAll('button')).toHaveLength(4);
-    for (const name of ['Транзакции', 'Статистика', 'Настройки']) {
+    expect(nav.querySelectorAll('button')).toHaveLength(5);
+    for (const name of ['Транзакции', 'Статистика', 'Поездки', 'Настройки']) {
       const button = screen.getByRole('button', { name });
       fireEvent.click(button);
       expect(button).toHaveAttribute('aria-current', 'page');
       if (name === 'Транзакции') expect(await screen.findByText('По выбранным условиям операций нет.')).toBeInTheDocument();
       else if (name === 'Статистика') expect(await screen.findByText('За выбранный период расходов нет.')).toBeInTheDocument();
+      else if (name === 'Поездки') expect(await screen.findByText('Поездок пока нет. Можно создать будущую поездку и записывать билеты заранее.')).toBeInTheDocument();
       else expect(await screen.findByText('Персональные напоминания')).toBeInTheDocument();
     }
     fireEvent.click(screen.getByRole('button', { name: 'Главная' }));

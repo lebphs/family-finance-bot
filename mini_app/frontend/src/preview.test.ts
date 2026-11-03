@@ -48,3 +48,30 @@ it('демостатистика содержит 12 предыдущих мес
   expect(data.participants).toHaveLength(2);
   for (const person of data.participants) expect(person.monthly.every(month => Number(month.total) > 0)).toBe(true);
 });
+
+it('предпросмотр поездок использует только демонстрационные курсы и учитывает предоплаты', async () => {
+  const client = createPreviewClient();
+  const trip = await client.createTrip({ name: 'Италия', date_from: '2026-03-10', date_to: '2026-03-20', currency: 'EUR' });
+  expect((await client.travelContext()).trip).toBeNull();
+  await client.createExpense({ request_id: 'flight', date: '2026-01-10', amount: '100', currency: 'EUR', trip_id: trip.trip_id, category: 'Междугородний транспорт', description: 'Билеты' });
+  const report = await client.tripReport(trip.trip_id);
+  expect(report.total).toBe('350.00');
+  expect(report.transactions[0].rate_source).toBe('DEMO');
+  await client.setTravelMode(trip.trip_id);
+  expect((await client.travelContext()).trip?.trip_id).toBe(trip.trip_id);
+  await client.completeTrip(trip.trip_id);
+  expect((await client.travelContext()).trip).toBeNull();
+  expect((await client.tripReport(trip.trip_id)).total).toBe('350.00');
+});
+
+it('расход поездки виден в её отчёте и истории, но не меняет основную статистику', async () => {
+  const client = createPreviewClient();
+  const beforeHome = await client.home();
+  const beforeStatistics = await client.statistics({ months: '6' });
+  const trip = await client.createTrip({ name: 'Отпуск', date_from: `${beforeHome.month}-01`, date_to: `${beforeHome.month}-20`, currency: 'EUR' });
+  const expense = await client.createExpense({ request_id: 'travel-only', date: `${beforeHome.month}-02`, amount: '1000', currency: 'EUR', trip_id: trip.trip_id, category: 'Проживание', description: 'Отель' });
+  expect(await client.home()).toEqual(beforeHome);
+  expect(await client.statistics({ months: '6' })).toEqual(beforeStatistics);
+  expect((await client.tripReport(trip.trip_id)).total).toBe('3500.00');
+  expect((await client.transactions({ trip_id: trip.trip_id })).items[0].transaction_id).toBe(expense.transaction_id);
+});

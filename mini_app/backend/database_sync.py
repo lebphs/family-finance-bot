@@ -13,7 +13,8 @@ from mini_app.backend.sheets import SheetsGateway, cell
 
 logger = logging.getLogger(__name__)
 EXPENSE_HEADERS = ('date', 'description', 'category', 'amount', 'telegram_user_id',
-                   'display_name', 'transaction_id', 'created_at', 'updated_at')
+                   'display_name', 'transaction_id', 'created_at', 'updated_at',
+                   'trip_id', 'original_amount', 'currency', 'exchange_rate', 'rate_date', 'rate_source')
 
 
 class DatabaseBackup:
@@ -81,17 +82,29 @@ class DailyDatabaseSync:
                 logger.error('Не удалось выгрузить базу в Google Sheets; повторим позже')
 
     def _publish(self, today):
-        _, categories, transactions = self.database.snapshot()
+        from mini_app.backend.travel import TripRepository
+        TripRepository(self.settings).categories_sync()
+        _, categories, transactions, trips, travel_categories = self.database.snapshot(include_travel=True)
         expense_rows = [list(EXPENSE_HEADERS)] + [[
             item.date.isoformat(), item.description, item.category, str(item.amount),
             str(item.author_id) if item.author_id is not None else '', item.author_name,
             item.transaction_id, item.created_at.isoformat() if item.created_at else '',
             item.updated_at.isoformat() if item.updated_at else '',
+            item.trip_id or '', str(item.original_amount if item.original_amount is not None else item.amount),
+            item.currency, str(item.exchange_rate if item.exchange_rate is not None else 1),
+            item.rate_date.isoformat() if item.rate_date else item.date.isoformat(), item.rate_source or 'BYN',
         ] for item in transactions]
         category_rows = [['category', 'subcategory']]
         for category in categories:
             category_rows.extend([[category.name, child] for child in category.subcategories] or [[category.name, '']])
-        exports = [('DB Transactions', expense_rows), ('DB Categories', category_rows),
+        trip_rows = [['trip_id', 'name', 'date_from', 'date_to', 'currency', 'completed', 'created_by']] + [
+            [t.trip_id, t.name, t.date_from.isoformat(), t.date_to.isoformat(), t.currency, str(t.completed), str(t.created_by)]
+            for t in trips]
+        travel_rows = [['category', 'subcategory']]
+        for category in travel_categories:
+            travel_rows.extend([[category['name'], child] for child in category['subcategories']] or [[category['name'], '']])
+        exports = [('DB Transactions', expense_rows), ('DB Categories', category_rows), ('DB Trips', trip_rows),
+                   ('DB Travel Categories', travel_rows),
                    ('DB Sync', [['export_date', 'source', 'transactions'], [today.isoformat(), 'SQLite', str(len(transactions))]])]
         book = self.gateway.spreadsheet
         worksheets = {ws.title: ws for ws in book.worksheets()}

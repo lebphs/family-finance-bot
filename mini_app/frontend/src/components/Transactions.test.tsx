@@ -8,6 +8,8 @@ const own: Transaction = { transaction_id: 'own', version: 'a'.repeat(64), date:
 const other: Transaction = { ...own, transaction_id: 'other', author_id: 43, author_name: 'Анна', description: 'Магазин' };
 function setup(items = [own, other], current = user) {
   const client = new ApiClient();
+  vi.spyOn(client, 'trips').mockResolvedValue([]);
+  vi.spyOn(client, 'travelContext').mockResolvedValue({ trip: null, currencies: ['BYN', 'EUR', 'USD'] });
   vi.spyOn(client, 'categories').mockResolvedValue([{ name: 'Еда', subcategories: ['Кафе'] }, { name: 'Транспорт', subcategories: [] }]);
   vi.spyOn(client, 'participants').mockResolvedValue([{ author_id: 42, author_name: 'Иван' }, { author_id: 43, author_name: 'Анна' }, { author_id: null, author_name: 'Автор не указан' }]);
   vi.spyOn(client, 'transactionCategories').mockResolvedValue(['Старая категория']);
@@ -60,7 +62,7 @@ describe('управление транзакциями', () => {
     fireEvent.change(screen.getByLabelText('Участник'), { target: { value: 'unknown' } });
     fireEvent.click(screen.getByRole('button', { name: 'Применить фильтры' }));
     await waitFor(() => expect(client.transactions).toHaveBeenLastCalledWith({ unknown_author: 'true' }, expect.any(AbortSignal)));
-    expect(client.categories).toHaveBeenCalledTimes(1);
+    expect(client.categories).toHaveBeenCalledTimes(2);
     expect(client.participants).toHaveBeenCalledTimes(1);
     expect(client.transactionCategories).toHaveBeenCalledTimes(1);
   });
@@ -90,7 +92,7 @@ describe('управление транзакциями', () => {
     vi.mocked(client.updateTransaction).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const save = screen.getByRole('button', { name: 'Сохранить изменения' }); fireEvent.click(save); fireEvent.click(save);
     expect(client.updateTransaction).toHaveBeenCalledTimes(1);
-    expect(client.updateTransaction).toHaveBeenCalledWith('own', { version: own.version, date: own.date, amount: '15.00', category: own.category, description: own.description });
+    expect(client.updateTransaction).toHaveBeenCalledWith('own', { trip_id: null, currency: 'BYN', version: own.version, date: own.date, amount: '15.00', category: own.category, description: own.description });
     finish({ ...own, amount: '15' }); await screen.findByText('Операция изменена.');
     expect(changed).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(client.transactions).toHaveBeenCalledTimes(2));

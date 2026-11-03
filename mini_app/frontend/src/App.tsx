@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
-import { api, ApiClient, ApiError, CurrentUser } from './api';
+import { api, ApiClient, ApiError, CurrentUser, Trip } from './api';
 import { StatusScreen } from './components/StatusScreen';
 import { initializeTelegram } from './telegram';
 import { Home } from './components/Home';
 import { FinanceIcon } from './components/FinanceIcon';
 import { Statistics } from './components/Statistics';
 import { Settings } from './components/Settings';
+import { Trips } from './components/Trips';
 import { Transactions } from './components/Transactions';
 
 const pages = [
   { id: 'home', label: 'Главная', icon: 'home', title: 'Семейные расходы', description: 'Здесь будут быстрое добавление расхода и сводка семейного бюджета.' },
   { id: 'transactions', label: 'Транзакции', icon: 'list', title: 'Транзакции', description: 'Здесь появятся история расходов, поиск и фильтры.' },
   { id: 'statistics', label: 'Статистика', icon: 'chart', title: 'Статистика', description: 'Здесь можно будет сравнивать расходы по месяцам, категориям и участникам.' },
+  { id: 'trips', label: 'Поездки', icon: 'travel', title: 'Поездки', description: 'Расходы путешествий' },
   { id: 'settings', label: 'Настройки', icon: 'settings', title: 'Настройки', description: 'Здесь появятся персональные настройки напоминаний.' },
 ] as const;
 type PageId = typeof pages[number]['id'];
@@ -21,6 +23,7 @@ export function App({ client = api }: { client?: ApiClient }) {
   const [session, setSession] = useState<Session>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [homeRevision, setHomeRevision] = useState(0);
+  const [expenseTrip, setExpenseTrip] = useState<Trip | null>(null);
   const [pageId, setPageId] = useState<PageId>('home');
   useEffect(initializeTelegram, []);
   useEffect(() => {
@@ -49,9 +52,10 @@ export function App({ client = api }: { client?: ApiClient }) {
       <h1>Семейные расходы</h1>
     </header>
     <main id="page-content" className="page-content">
-      <div hidden={pageId !== 'home'}><Home refresh={homeRevision} client={client} onDenied={() => setSession({ kind: 'denied' })} onTransactions={() => setPageId('transactions')} /></div>
+      <div hidden={pageId !== 'home'}><Home requestedTrip={expenseTrip} onTripConsumed={() => setExpenseTrip(null)} refresh={homeRevision} client={client} onDenied={() => setSession({ kind: 'denied' })} onTransactions={() => setPageId('transactions')} /></div>
       {pageId === 'transactions' && <Transactions client={client} user={session.user} onDenied={() => setSession({ kind: 'denied' })} onChanged={() => setHomeRevision((n) => n + 1)} />}
       {pageId === 'statistics' && <Statistics client={client} onDenied={() => setSession({ kind: 'denied' })} />}
+      {pageId === 'trips' && <Trips client={client} user={session.user} onDenied={() => setSession({ kind: 'denied' })} onChanged={() => setHomeRevision(n => n + 1)} onExpense={trip => { setExpenseTrip(trip); setPageId('home'); }} />}
       {pageId === 'settings' && <section className="profile-card" aria-label="Ваш профиль">
         <span className="avatar" aria-hidden="true">{session.user.display_name.slice(0, 1)}</span>
         <div><strong>{session.user.display_name}</strong><p>{session.user.role === 'admin' ? 'Администратор' : 'Участник семьи'}</p></div>
