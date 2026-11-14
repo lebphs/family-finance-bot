@@ -152,7 +152,12 @@ export class ApiClient {
   setTravelMode(trip_id: string | null): Promise<TravelContext> { return this.get('travel-mode', undefined, { trip_id }, 'PUT'); }
   me(signal?: AbortSignal): Promise<CurrentUser> { return this.get('me', signal); }
   categories(signal?: AbortSignal, travel = false): Promise<Category[]> { return this.get(travel ? 'categories?travel=true' : 'categories', signal); }
-  home(signal?: AbortSignal, scope: ExpenseScope = 'everyday'): Promise<HomeSummary> { return this.get(scope === 'everyday' ? 'home' : `home?scope=${scope}`, signal); }
+  home(signal?: AbortSignal, scope: ExpenseScope = 'everyday', month?: string): Promise<HomeSummary> {
+    const query = new URLSearchParams();
+    if (scope !== 'everyday') query.set('scope', scope);
+    if (month) query.set('month', month);
+    return this.get(`home${query.size ? `?${query}` : ''}`, signal);
+  }
   transactions(filters: TransactionFilters = {}, signal?: AbortSignal): Promise<TransactionPage> {
     return this.get(`transactions?${new URLSearchParams(filters as Record<string, string>)}`, signal);
   }

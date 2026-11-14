@@ -34,6 +34,23 @@ class HomeApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.client.aclose()
 
+    async def test_home_selected_month_and_empty_month(self):
+        await self.client.post('/api/transactions', json=self.payload)
+        response = await self.client.get('/api/home?month=2026-10')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['month'], '2026-10')
+        self.assertEqual(Decimal(response.json()['total']), Decimal('23.45'))
+        following = (await self.client.get('/api/home?month=2026-11')).json()
+        self.assertEqual(Decimal(following['total']), 0)
+        self.assertEqual(Decimal(following['previous_total']), Decimal('23.45'))
+        self.assertEqual(following['categories'], [])
+        self.assertEqual((await self.client.get('/api/home?month=0001-01')).status_code, 200)
+
+    async def test_home_rejects_invalid_month(self):
+        for month in ['2026-00', '2026-13', '2026-1', '0000-01', 'abc', '2026-10-01']:
+            with self.subTest(month=month):
+                self.assertEqual((await self.client.get('/api/home', params={'month': month})).status_code, 422)
+
     async def test_save_persists_id_author_and_refreshes_home(self):
         response = await self.client.post('/api/transactions', json=self.payload)
         self.assertEqual(response.status_code, 201, response.text)

@@ -159,7 +159,7 @@ class ExpenseService:
     async def home(self, today: date | None = None, scope='everyday') -> HomeResponse:
         today = today or datetime.now(ZoneInfo("Europe/Minsk")).date()
         start = today.replace(day=1)
-        previous = (start - timedelta(days=1)).replace(day=1)
+        previous = (start - timedelta(days=1)).replace(day=1) if start > date.min else start
         from mini_app.backend.travel import in_scope
         transactions = [item for item in await self.transactions.list() if in_scope(item, scope)]
         current = [item for item in transactions if (item.date.year, item.date.month) == (start.year, start.month)]

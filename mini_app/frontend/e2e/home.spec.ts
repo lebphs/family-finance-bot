@@ -56,7 +56,7 @@ for (const theme of ['light', 'dark'] as const) {
   });
 }
 
-test('иконки всех категорий: выбор, клавиатура, отмена и узкий экран', async ({ page }) => {
+test('иконки всех категорий: выбор, ввод суммы, отмена и узкий экран', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const names = ['Продукты', 'Дом', 'Авто', 'Транспорт', 'Кафе', 'Спорт', 'Здоровье', 'Одежда', 'Связь', 'Подарки', 'Питомцы', 'Другое', 'Образование'];
   await page.route('https://telegram.org/**', (route) => route.abort());
@@ -71,9 +71,10 @@ test('иконки всех категорий: выбор, клавиатура
   await page.screenshot({ path: test.info().outputPath('category-wheel.png'), fullPage: true });
   await page.getByRole('button', { name: 'Добавить расход: Продукты' }).click();
   await expect(page.getByLabel('Категория', { exact: true })).toHaveValue('Продукты');
-  for (const name of ['1', '2', 'Десятичная запятая', '5', '0']) await page.getByRole('button', { name, exact: true }).click();
+  await expect(page.getByLabel('Сумма, BYN')).toHaveAttribute('inputmode', 'decimal');
+  await page.getByLabel('Сумма, BYN').fill('12,50');
   await expect(page.getByLabel('Сумма, BYN')).toHaveValue('12,50');
-  await page.getByRole('button', { name: 'Удалить последнюю цифру' }).click();
+  await page.getByLabel('Сумма, BYN').press('Backspace');
   await expect(page.getByLabel('Сумма, BYN')).toHaveValue('12,5');
   await page.screenshot({ path: test.info().outputPath('category-expense.png') });
   await page.getByRole('button', { name: 'Сохранить расход' }).focus();

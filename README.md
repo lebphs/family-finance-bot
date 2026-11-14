@@ -111,6 +111,7 @@ docker compose up --build -d
 Настройки Telegram и локального тестирования описаны в
 [инструкции разработки](docs/mini-app-local-development.md).
 Деплой: [инструкция VPS](docs/vps-deployment.md).
+Передача суммы через URL из команд iPhone: [инструкция и форматы ссылок](docs/iphone-shortcuts.md).
 
 ## Проверки
 

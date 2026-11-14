@@ -27,23 +27,76 @@ async function fill(amount = '12,50') {
 }
 
 describe('главная страница этапа 5', () => {
+  it('переключает диаграмму свайпами и стрелками через границу года', async () => {
+    const { client } = setup();
+    const overview = (await screen.findByRole('heading', { name: 'октябрь 2026 г.' })).closest('section')!;
+    vi.mocked(client.home).mockImplementation(async (_signal, _scope, month) => ({ ...empty, month: month!, total: '42' }));
+    const swipe = (from: number, to: number) => {
+      fireEvent.touchStart(overview, { touches: [{ clientX: from, clientY: 200 }] });
+      fireEvent.touchEnd(overview, { touches: [], changedTouches: [{ clientX: to, clientY: 205 }] });
+    };
+    swipe(100, 250);
+    await waitFor(() => expect(client.home).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'everyday', '2026-09'));
+    expect(await screen.findByText('42,00')).toBeInTheDocument();
+    swipe(250, 100);
+    await waitFor(() => expect(client.home).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'everyday', '2026-10'));
+    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole('button', { name: 'Следующий месяц' }));
+    await waitFor(() => expect(client.home).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'everyday', '2027-01'));
+    fireEvent.click(screen.getByRole('button', { name: 'Предыдущий месяц' }));
+    await waitFor(() => expect(client.home).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'everyday', '2026-12'));
+    expect(client.categories).toHaveBeenCalledTimes(1);
+  });
+
+  it('игнорирует вертикальные жесты, короткие свайпы и отменённые касания', async () => {
+    const { client } = setup();
+    const overview = (await screen.findByRole('heading', { name: 'октябрь 2026 г.' })).closest('section')!;
+    for (const [x, y] of [[110, 200], [200, 400]]) {
+      fireEvent.touchStart(overview, { touches: [{ clientX: 100, clientY: 200 }] });
+      fireEvent.touchEnd(overview, { touches: [], changedTouches: [{ clientX: x, clientY: y }] });
+    }
+    fireEvent.touchStart(overview, { touches: [{ clientX: 100, clientY: 200 }] });
+    fireEvent.touchCancel(overview);
+    fireEvent.touchEnd(overview, { touches: [], changedTouches: [{ clientX: 250, clientY: 200 }] });
+    expect(client.home).toHaveBeenCalledTimes(1);
+  });
+
+  it('не показывает старые суммы при загрузке и игнорирует запоздалый ответ другого месяца', async () => {
+    const { client } = setup();
+    await screen.findByRole('heading', { name: 'октябрь 2026 г.' });
+    let finish!: (value: HomeSummary) => void;
+    vi.mocked(client.home).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }))
+      .mockResolvedValue({ ...empty, month: '2026-08', total: '80' });
+    fireEvent.click(screen.getByRole('button', { name: 'Предыдущий месяц' }));
+    expect(screen.getByText('Загружаем сводку…')).toBeInTheDocument();
+    expect(screen.queryByText('0,00')).not.toBeInTheDocument();
+    const oldSignal = vi.mocked(client.home).mock.calls.at(-1)![0]!;
+    fireEvent.click(screen.getByRole('button', { name: 'Предыдущий месяц' }));
+    expect(oldSignal.aborted).toBe(true);
+    await screen.findByText('80,00');
+    await act(async () => { finish({ ...empty, month: '2026-09', total: '90' }); });
+    expect(screen.getByText('80,00')).toBeInTheDocument();
+    expect(screen.queryByText('90,00')).not.toBeInTheDocument();
+  });
+
   it('открывает форму только по нажатию, выбирает категорию и сохраняет черновик при отмене', async () => {
     const { client } = setup();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: 'Добавить расход: Еда' }));
     expect(screen.getByRole('dialog', { name: 'Новый расход' })).toBeInTheDocument();
     expect(screen.getByLabelText('Категория')).toHaveValue('Еда');
-    expect(screen.getByLabelText('Сумма, BYN')).toHaveFocus();
-    for (const key of ['1', '2', 'Десятичная запятая', '5', '0']) fireEvent.click(screen.getByRole('button', { name: key }));
+    expect(screen.getByRole('button', { name: 'Отменить' })).toHaveFocus();
+    expect(screen.getByLabelText('Сумма, BYN')).toHaveAttribute('inputmode', 'decimal');
+    expect(screen.queryByRole('button', { name: /^1$/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Сумма, BYN'), { target: { value: '12,50' } });
     expect(screen.getByLabelText('Сумма, BYN')).toHaveValue('12,50');
-    fireEvent.click(screen.getByRole('button', { name: 'Удалить последнюю цифру' }));
+    fireEvent.change(screen.getByLabelText('Сумма, BYN'), { target: { value: '12,5' } });
     expect(screen.getByLabelText('Сумма, BYN')).toHaveValue('12,5');
     fireEvent.click(screen.getByRole('button', { name: 'Отменить' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(client.createExpense).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Добавить расход: Еда' }));
     expect(screen.getByLabelText('Сумма, BYN')).toHaveValue('12,5');
-    fireEvent.click(screen.getByRole('button', { name: 'Очистить сумму' }));
+    fireEvent.change(screen.getByLabelText('Сумма, BYN'), { target: { value: '' } });
     expect(screen.getByLabelText('Сумма, BYN')).toHaveValue('');
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

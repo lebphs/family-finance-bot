@@ -8,6 +8,7 @@ import { Statistics } from './components/Statistics';
 import { Settings } from './components/Settings';
 import { Trips } from './components/Trips';
 import { Transactions } from './components/Transactions';
+import { readExpenseLaunch } from './expense-link';
 
 const pages = [
   { id: 'home', label: 'Главная', icon: 'home', title: 'Семейные расходы', description: 'Здесь будут быстрое добавление расхода и сводка семейного бюджета.' },
@@ -24,6 +25,7 @@ export function App({ client = api }: { client?: ApiClient }) {
   const [attempt, setAttempt] = useState(0);
   const [homeRevision, setHomeRevision] = useState(0);
   const [expenseTrip, setExpenseTrip] = useState<Trip | null>(null);
+  const [expenseLaunch] = useState(() => readExpenseLaunch());
   const [pageId, setPageId] = useState<PageId>('home');
   useEffect(initializeTelegram, []);
   useEffect(() => {
@@ -52,7 +54,7 @@ export function App({ client = api }: { client?: ApiClient }) {
       <h1>Семейные расходы</h1>
     </header>
     <main id="page-content" className="page-content">
-      <div hidden={pageId !== 'home'}><Home requestedTrip={expenseTrip} onTripConsumed={() => setExpenseTrip(null)} refresh={homeRevision} client={client} onDenied={() => setSession({ kind: 'denied' })} onTransactions={() => setPageId('transactions')} /></div>
+      <div hidden={pageId !== 'home'}><Home initialExpense={expenseLaunch} requestedTrip={expenseTrip} onTripConsumed={() => setExpenseTrip(null)} refresh={homeRevision} client={client} onDenied={() => setSession({ kind: 'denied' })} onTransactions={() => setPageId('transactions')} /></div>
       {pageId === 'transactions' && <Transactions client={client} user={session.user} onDenied={() => setSession({ kind: 'denied' })} onChanged={() => setHomeRevision((n) => n + 1)} />}
       {pageId === 'statistics' && <Statistics client={client} onDenied={() => setSession({ kind: 'denied' })} />}
       {pageId === 'trips' && <Trips client={client} user={session.user} onDenied={() => setSession({ kind: 'denied' })} onChanged={() => setHomeRevision(n => n + 1)} onExpense={trip => { setExpenseTrip(trip); setPageId('home'); }} />}

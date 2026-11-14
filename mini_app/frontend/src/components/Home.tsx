@@ -3,6 +3,7 @@ import { ApiClient, ApiError, Category, ExpenseInput, HomeSummary, Trip } from '
 import { StatusScreen } from './StatusScreen';
 import { ExpenseWheel } from './ExpenseWheel';
 import { categoryIcon, FinanceIcon } from './FinanceIcon';
+import { ExpenseLaunch } from '../expense-link';
 
 export function todayInMinsk(): string {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Minsk', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -13,7 +14,7 @@ export function validDate(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsumed }: { refresh?: number; client: ApiClient; onDenied: () => void; onTransactions: () => void; requestedTrip?: Trip | null; onTripConsumed?: () => void }) {
+export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsumed, initialExpense }: { refresh?: number; client: ApiClient; onDenied: () => void; onTransactions: () => void; requestedTrip?: Trip | null; onTripConsumed?: () => void; initialExpense?: ExpenseLaunch | null }) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [tripId, setTripId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -26,27 +27,41 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
   const [categoriesReady, setCategoriesReady] = useState(false);
   const [categoryError, setCategoryError] = useState('');
   const [summary, setSummary] = useState<HomeSummary | null>(null);
+  const [month, setMonth] = useState<string>();
+  const selectedMonth = useRef(month);
+  selectedMonth.current = month;
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressClick = useRef(false);
   const [summaryError, setSummaryError] = useState('');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(initialExpense?.amount ?? '');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(todayInMinsk);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialExpense?.error ?? '');
   const [success, setSuccess] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(!!initialExpense);
   const editor = useRef<HTMLElement>(null);
-  const amountInput = useRef<HTMLInputElement>(null);
   const busy = useRef(false);
   const explicitTrip = useRef(false);
   const lastActiveId = useRef<string | null>(null);
+  const displayedMonth = month ?? summary?.month ?? todayInMinsk().slice(0, 7);
+  function changeMonth(direction: number) {
+    setMonth(current => {
+      const base = current ?? summary?.month ?? todayInMinsk().slice(0, 7);
+      const [year, number] = base.split('-').map(Number);
+      const index = year * 12 + number - 1 + direction;
+      if (index < 12 || index >= 10000 * 12) return base;
+      return `${String(Math.floor(index / 12)).padStart(4, '0')}-${String(index % 12 + 1).padStart(2, '0')}`;
+    });
+  }
   useEffect(() => {
     if (!formOpen) return;
     const previous = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    amountInput.current?.focus();
+    editor.current?.querySelector<HTMLButtonElement>('.editor-header button')?.focus();
     return () => { document.body.style.overflow = overflow; if (previous?.isConnected) previous.focus(); };
   }, [formOpen]);
   function selectTrip(identifier: string | null) {
@@ -58,15 +73,6 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
     if (name !== category) { setCategory(name); setDescription(''); }
     if (!uncertain) { setSuccess(''); setError(''); }
     setFormOpen(true);
-  }
-  function keypad(key: string) {
-    if (saving || uncertain) return;
-    setAmount((value) => {
-      if (key === '⌫') return value.slice(0, -1);
-      if (key === 'C') return '';
-      const next = key === ',' && !value ? '0,' : value + key;
-      return /^\d{0,10}(?:[.,]\d{0,2})?$/.test(next) ? next : value;
-    });
   }
 
   const summaryVersion = useRef(0);
@@ -107,8 +113,7 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
 
   useEffect(() => {
     const controller = new AbortController();
-    const version = ++summaryVersion.current;
-    setCategoryError(''); setSummaryError('');
+    setCategoryError('');
     setCategoriesReady(false);
     client.categories(controller.signal, !!tripId).then((items) => {
       if (!controller.signal.aborted) { setCategories(items); setCategoriesReady(true); }
@@ -117,7 +122,14 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
       if (err instanceof ApiError && err.accessDenied) deny.current();
       else setCategoryError('Не удалось загрузить категории.');
     });
-    client.home(controller.signal).then((data) => {
+    return () => controller.abort();
+  }, [client, attempt, refresh, tripId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const version = ++summaryVersion.current;
+    setSummary(null); setSummaryError('');
+    client.home(controller.signal, 'everyday', month).then((data) => {
       if (!controller.signal.aborted && version === summaryVersion.current) setSummary(data);
     }).catch((err: unknown) => {
       if (controller.signal.aborted || version !== summaryVersion.current) return;
@@ -125,7 +137,7 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
       else setSummaryError('Не удалось загрузить сводку.');
     });
     return () => controller.abort();
-  }, [client, attempt, refresh, tripId]);
+  }, [client, attempt, refresh, month]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -155,7 +167,7 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
       setSummary(null); setSummaryError('');
       const version = ++summaryVersion.current;
       try {
-        const data = await client.home();
+        const data = await client.home(undefined, 'everyday', selectedMonth.current);
         if (version === summaryVersion.current) setSummary(data);
       }
       catch (err) {
@@ -184,10 +196,40 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
       {activeId && !tripId && <button className="secondary-button" onClick={() => selectTrip(activeId)}>Вернуться к активной поездке</button>}
       {contextError && <p role="alert">{contextError}<button onClick={() => setContextAttempt(n => n + 1)}>Повторить загрузку режима</button></p>}
     </section>
-    <section className="overview" aria-labelledby="overview-title" inert={formOpen}>
-      <div className="month-heading"><span aria-hidden="true">—</span><h2 id="overview-title">{summary ? new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${summary.month}-01T00:00:00Z`)) : 'Текущий месяц'}</h2><span aria-hidden="true">—</span></div>
+    <section className="overview" aria-labelledby="overview-title" inert={formOpen}
+      onTouchStart={event => {
+        suppressClick.current = false;
+        const touch = event.touches[0];
+        swipeStart.current = event.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : null;
+      }}
+      onTouchMove={event => {
+        const start = swipeStart.current;
+        if (event.touches.length !== 1 || (start && Math.abs(event.touches[0].clientY - start.y) > 40)) swipeStart.current = null;
+      }}
+      onTouchCancel={() => { swipeStart.current = null; }}
+      onTouchEnd={event => {
+        const start = swipeStart.current;
+        swipeStart.current = null;
+        const touch = event.changedTouches[0];
+        if (!start || !touch || event.touches.length) return;
+        const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+        if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+        suppressClick.current = true;
+        changeMonth(dx > 0 ? -1 : 1);
+      }}
+      onClickCapture={event => {
+        if (suppressClick.current && event.detail > 0) { event.preventDefault(); event.stopPropagation(); suppressClick.current = false; }
+      }}>
+      <div className="month-heading">
+        <button type="button" aria-label="Предыдущий месяц" disabled={displayedMonth === '0001-01'} onClick={() => changeMonth(-1)}>‹</button>
+        <h2 id="overview-title" aria-live="polite">{new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${displayedMonth}-01T00:00:00Z`))}</h2>
+        <button type="button" aria-label="Следующий месяц" disabled={displayedMonth === '9999-12'} onClick={() => changeMonth(1)}>›</button>
+      </div>
+      <p className="overview-hint">Листайте влево или вправо, чтобы сменить месяц</p>
       <p className="overview-hint">Нажмите на категорию, чтобы добавить расход</p>
       <ExpenseWheel categories={categories} summary={summary} disabled={saving || uncertain || !contextReady || !!contextError || !categoriesReady} onCategory={openExpense} />
+      {!summary && !summaryError && <p role="status">Загружаем сводку…</p>}
+      {summary && summary.categories.length === 0 && <p className="overview-hint">В этом месяце расходов пока нет.</p>}
       {uncertain && <button className="secondary-button" onClick={() => openExpense()}>Продолжить сохранение</button>}
       {success && <p className="save-success" role="status">{success}</p>}
 
@@ -196,7 +238,7 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
       {!categoriesReady && !categoryError && <p role="status">Загружаем категории…</p>}
       {categoriesReady && categories.length === 0 && <p>Категории пока не настроены в таблице.</p>}
     </section>
-    {formOpen && <section className="expense-editor" ref={editor} role="dialog" aria-modal="true" aria-labelledby="expense-title" onKeyDown={(event) => {
+    {formOpen && <section className="expense-editor expense-create" ref={editor} role="dialog" aria-modal="true" aria-labelledby="expense-title" onKeyDown={(event) => {
       if (event.key === 'Escape' && !saving) { event.preventDefault(); setFormOpen(false); }
       if (event.key === 'Tab') {
         const nodes = editor.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)');
@@ -211,7 +253,7 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
         <fieldset disabled={saving || uncertain}>
           <label>Поездка расхода<select value={tripId ?? ''} onChange={e => selectTrip(e.target.value || null)}><option value="">Обычный расход</option>{trips.map(t => <option value={t.trip_id} key={t.trip_id}>{t.name}</option>)}</select></label>
           <label>Валюта расхода<select value={currency} onChange={e => setCurrency(e.target.value)}>{currencies.map(c => <option key={c}>{c}</option>)}</select></label>
-          <label className="amount-field">Сумма, {currency}<input ref={amountInput} inputMode="none" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" required /></label>
+          <label className="amount-field">Сумма, {currency}<input inputMode="decimal" autoComplete="off" enterKeyHint="done" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" required /></label>
           <label className={selected?.subcategories.length ? undefined : "editor-category-wide"}>Категория<select aria-label="Категория" value={category} onChange={(e) => { setCategory(e.target.value); setDescription(''); }} required>
             <option value="">Выберите категорию</option>
             {categories.map((item) => <option key={item.name}>{item.name}</option>)}
@@ -225,8 +267,6 @@ export function Home({ refresh = 0, client, onDenied, requestedTrip, onTripConsu
         {error && <p className="form-error" role="alert">{error}</p>}
         {uncertain && <p>Данные сохранены в форме. Повторная отправка проверит результат и не создаст дубликат.</p>}
 
-        <div className="numeric-keypad" aria-label="Цифровая клавиатура">{['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫'].map((key) => <button type="button" key={key} disabled={saving || uncertain} aria-label={key === '⌫' ? 'Удалить последнюю цифру' : key === ',' ? 'Десятичная запятая' : key} onClick={() => keypad(key)}>{key}</button>)}</div>
-        <button className="clear-amount" type="button" disabled={saving || uncertain} onClick={() => keypad('C')}>Очистить сумму</button>
         <button className="primary-button" disabled={saving || (!uncertain && (!categoriesReady || !contextReady || !!contextError || categories.length === 0))} type="submit">{saving ? 'Сохраняем…' : uncertain ? 'Повторить сохранение' : 'Сохранить расход'}</button>
       </form>
     </section>}

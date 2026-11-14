@@ -16,6 +16,8 @@
   --app-hint: #b4bfd2; --app-accent: #91adff; --app-accent-text: #13244f; --border: #354156;
 }
 * { box-sizing: border-box; }
+/* Allow scrolling without pinch or double-tap zoom throughout the Mini App. */
+html { touch-action: pan-x pan-y; }
 body { margin: 0; min-width: 280px; }
 button { font: inherit; cursor: pointer; touch-action: manipulation; }
 button:focus-visible { outline: 3px solid var(--app-accent); outline-offset: 3px; }
@@ -47,7 +49,8 @@ p { line-height: 1.6; overflow-wrap: anywhere; }
 .home-card h3 { font-size: 1rem; margin: 24px 0 12px; }
 fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 16px; min-width: 0; }
 label { display: grid; gap: 8px; font-size: .9rem; font-weight: 600; }
-input, select { font: inherit; width: 100%; min-width: 0; min-height: 48px; padding: 12px; border-radius: 12px; border: 1px solid var(--border); color: var(--app-text); background: var(--app-bg); }
+/* At least 16px prevents iOS from zooming when a field receives focus. */
+input, select { font: inherit; font-size: 16px; width: 100%; min-width: 0; min-height: 48px; padding: 12px; border-radius: 12px; border: 1px solid var(--border); color: var(--app-text); background: var(--app-bg); }
 input:focus-visible, select:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
 button:disabled { opacity: .6; cursor: wait; }
 .form-error { color: var(--app-text); border-left: 3px solid var(--app-accent); padding-left: 12px; margin-top: 16px; }
@@ -101,9 +104,10 @@ button:disabled { opacity: .6; cursor: wait; }
 .page-header .greeting { color: #fff; opacity: .9; margin-top: 6px; font-size: .85rem; }
 .page-content { padding-top: 24px; }
 .home { gap: 24px; }
-.overview { min-width: 0; }
+.overview { min-width: 0; touch-action: pan-y; }
 .month-heading { display: flex; align-items: center; justify-content: center; gap: 20px; color: var(--navy-hint); }
 .month-heading h2 { font-weight: 500; text-transform: capitalize; font-size: 1.1rem; }
+.month-heading button { flex-shrink: 0; width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--navy-strong); font-size: 1.8rem; }
 .overview-hint { text-align: center; font-size: .72rem; margin-top: 8px; color: var(--navy-hint); }
 .expense-wheel { position: relative; width: 100%; aspect-ratio: 1; margin: 18px auto 14px; }
 .donut { position: absolute; width: 62%; height: 62%; left: 19%; top: 19%; }
@@ -153,15 +157,73 @@ button:disabled { opacity: .6; cursor: wait; }
   .donut-total strong { font-size: .9rem; }
   .donut-total span { font-size: .55rem; }
 }
-/* Keep amount, category and keypad within a typical mobile viewport. */
-.expense-editor fieldset { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.expense-editor label { font-size: .8rem; gap: 6px; }
-.expense-editor input, .expense-editor select { min-height: 42px; padding-top: 9px; padding-bottom: 9px; }
+/* Compact expense entry, including Telegram's safe areas and shorter sheet viewport. */
+.expense-editor { padding-bottom: calc(12px + var(--safe-bottom)); }
+.expense-editor .editor-header { padding-top: calc(4px + var(--safe-top)); padding-bottom: 4px; }
+.expense-editor form { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; padding-top: 10px; }
+.expense-editor fieldset, .expense-editor form > p, .expense-editor .numeric-keypad { grid-column: 1 / -1; }
+.expense-editor fieldset { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.expense-editor label { font-size: .75rem; line-height: 16px; gap: 4px; }
+.expense-editor input, .expense-editor select { min-height: 36px; height: 36px; padding: 6px 10px; }
 .expense-editor .amount-field, .editor-date, .editor-note { grid-column: 1 / -1; }
-.expense-editor .amount-field input { min-height: 50px; padding: 0; }
+.expense-editor .editor-date { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.expense-editor .editor-date input { height: 32px; min-height: 32px; text-align: right; }
+.expense-editor .amount-field { grid-template-columns: auto minmax(0, 1fr); align-items: center; padding: 8px 12px; }
+.expense-editor .amount-field input { height: 40px; min-height: 40px; padding: 0; font-size: 2rem; }
 .numeric-keypad { margin-top: 20px; gap: 6px; }
 .numeric-keypad button { min-height: 52px; }
+.expense-editor .numeric-keypad { margin-top: 2px; gap: 5px; }
+.expense-editor .numeric-keypad button { min-height: 44px; font-size: 1.5rem; }
+.expense-editor .clear-amount { margin: 0; min-height: 44px; padding: 4px; }
+.expense-editor .primary-button { margin: 0; min-height: 44px; padding: 8px; }
 .editor-category-wide { grid-column: 1 / -1; }
+@media (max-height: 650px) {
+  .expense-editor form { gap: 6px; padding-top: 6px; }
+  .expense-editor fieldset { row-gap: 6px; }
+  .expense-editor .editor-note { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: center; }
+  .expense-editor .numeric-keypad { gap: 4px; }
+  .expense-editor .numeric-keypad button { min-height: 40px; }
+}
+@media (max-height: 600px) {
+  .expense-editor { padding-bottom: calc(8px + var(--safe-bottom)); }
+  .expense-editor .editor-header button { min-height: 36px; }
+  .expense-editor fieldset { row-gap: 4px; }
+  .expense-editor .amount-field input { height: 32px; min-height: 32px; font-size: 1.8rem; }
+}
+
+/* Expense creation uses the phone's decimal keyboard, opened only on tap. */
+.expense-create { background: radial-gradient(ellipse at 50% 0, #0b203b 0, #061429 52%, #041024 100%); }
+.expense-create .editor-header { background: transparent; }
+.expense-create .editor-header button { color: #a9cfff; }
+.expense-create .editor-header h2 { font-size: 1rem; }
+.expense-create form { display: flex; flex-direction: column; gap: 24px; padding-top: 14px; }
+.expense-create fieldset { gap: 16px 12px; }
+.expense-create label { color: #a9c3df; font-size: .8rem; line-height: 18px; gap: 6px; }
+.expense-create input, .expense-create select { height: 44px; min-height: 44px; padding: 10px 12px; border: 1px solid #29486b; border-radius: 12px; background-color: #07192e; box-shadow: inset 0 1px 2px #ffffff06, 0 0 0 1px #152b4338; }
+.expense-create input:focus-visible, .expense-create select:focus-visible { outline: 1px solid #6bc4ff; outline-offset: 1px; box-shadow: 0 0 0 3px #3b99ef20; }
+.expense-create .editor-date { display: block; font-size: 0; line-height: 0; }
+.expense-create .editor-date input { height: 38px; min-height: 38px; text-align: center; font-size: 16px; line-height: 22px; padding-top: 6px; padding-bottom: 6px; border-radius: 14px; }
+.expense-create .amount-field { position: relative; grid-template-columns: minmax(0, 1fr); padding: 10px; gap: 6px; border-radius: 14px; background: linear-gradient(120deg, #122f51, #102442); }
+.expense-create .amount-field input { height: 52px; min-height: 52px; padding: 4px 10px 4px 42px; font-size: 2rem; font-weight: 400; color: #e2edff; border-color: #5bb7f5; background-color: #0d2949; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 32' fill='none' stroke='%239bb9d5' stroke-width='1.4'%3E%3Cellipse cx='11' cy='15' rx='7' ry='3'/%3E%3Cpath d='M4 15v12c0 4 14 4 14 0V15M4 19c0 4 14 4 14 0M4 23c0 4 14 4 14 0'/%3E%3Cellipse cx='18' cy='6' rx='7' ry='3'/%3E%3Cpath d='M11 6v6m14-6v13c0 2-3 3-7 3m-6-12c3 2 13 2 13-1m-7 8c4 0 7-1 7-3'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 12px center; background-size: 22px 26px; box-shadow: 0 0 0 2px #339bff15; }
+.expense-create .amount-field input::placeholder { color: #bfcee2; opacity: 1; }
+.expense-create .editor-note { grid-template-columns: minmax(0, 1fr); }
+.expense-create .editor-note input { padding-left: 14px; border: 1px solid #29486b; border-radius: 12px; }
+.expense-create .primary-button { min-height: 48px; border-radius: 13px; border: 1px solid #68c5ff; background: linear-gradient(180deg, #286bcb, #164f9c); box-shadow: inset 0 1px 0 #ffffff20, 0 4px 16px #00000026; color: #fff; font-size: 1rem; }
+.expense-create form > .form-error { margin: 0; }
+@media (max-height: 650px) {
+  .expense-create form { gap: 18px; padding-top: 8px; }
+  .expense-create fieldset { row-gap: 10px; }
+  .expense-create label { font-size: .75rem; line-height: 16px; gap: 4px; }
+  .expense-create input, .expense-create select { height: 40px; min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
+  .expense-create .amount-field input { height: 44px; min-height: 44px; }
+}
+@media (max-height: 600px) {
+  .expense-create fieldset { row-gap: 8px; }
+  .expense-create input, .expense-create select { height: 38px; min-height: 38px; }
+  .expense-create .amount-field { padding: 8px; }
+  .expense-create .amount-field input { height: 40px; min-height: 40px; }
+  .expense-create .primary-button { min-height: 44px; }
+}
 
 [hidden] { display: none !important; }
 .filter-toolbar { display: flex; justify-content: flex-end; }

@@ -108,9 +108,13 @@ export function createPreviewClient(): ApiClient {
       return response(reminders);
     }
     if (path === 'home') {
-      const current = rows.filter(row => inScope(row) && row.date.startsWith(month));
-      const total = sum(current), previousTotal = sum(rows.filter(row => inScope(row) && row.date.startsWith(previousMonth)));
-      return response({ month, total: money(total), previous_total: money(previousTotal), change: money(total - previousTotal), change_percent: previousTotal ? money((total / previousTotal - 1) * 100) : null, categories: grouped(current, scope === 'all'), recent: current.slice(0, 5) });
+      const selectedMonth = query.get('month') ?? month;
+      const previous = new Date(`${selectedMonth}-01T00:00:00Z`);
+      previous.setUTCMonth(previous.getUTCMonth() - 1);
+      const priorMonth = previous.toISOString().slice(0, 7);
+      const current = rows.filter(row => inScope(row) && row.date.startsWith(selectedMonth));
+      const total = sum(current), previousTotal = sum(rows.filter(row => inScope(row) && row.date.startsWith(priorMonth)));
+      return response({ month: selectedMonth, total: money(total), previous_total: money(previousTotal), change: money(total - previousTotal), change_percent: previousTotal ? money((total / previousTotal - 1) * 100) : null, categories: grouped(current, scope === 'all'), recent: current.slice(0, 5) });
     }
     if (path === 'transactions/categories') return response(categories.map(row => row.name));
     if (path === 'transactions/participants') return response(participants());

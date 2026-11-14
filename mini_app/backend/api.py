@@ -1,6 +1,7 @@
 """FastAPI application factory and HTTP-only concerns."""
 
 from contextlib import asynccontextmanager
+from datetime import date
 import logging
 from typing import Annotated, AsyncIterator, Callable
 
@@ -287,8 +288,11 @@ def create_app(
         return await StatisticsService(app.state.transaction_repository).get(query)
 
     @app.get("/api/home", response_model=HomeResponse, tags=["home"])
-    async def get_home(_user: Annotated[CurrentUser, Depends(current_user)], scope: Scope = 'everyday') -> HomeResponse:
-        return await expenses.home(scope=scope)
+    async def get_home(
+        _user: Annotated[CurrentUser, Depends(current_user)], scope: Scope = 'everyday',
+        month: Annotated[str | None, Query(pattern=r"^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-(0[1-9]|1[0-2])$")] = None,
+    ) -> HomeResponse:
+        return await expenses.home(today=date.fromisoformat(f"{month}-01") if month else None, scope=scope)
 
     @app.exception_handler(RepositoryError)
     async def handle_repository_error(_request: Request, error: RepositoryError):
